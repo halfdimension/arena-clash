@@ -43,6 +43,7 @@ if(ARENA_CLASH_BUILD_APPLICATION)
 
     add_executable(ArenaClash
         src/main.cpp
+        src/input/KeyboardInput.cpp
         src/render/GameRenderer.cpp
     )
     target_link_libraries(ArenaClash PRIVATE arena_clash_core raylib)

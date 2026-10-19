@@ -2,7 +2,7 @@
 
 ## Status
 
-This document defines the initial design target. No gameplay is implemented. All move names, timings, damage values, resource values, controls, and round rules below are **provisional** and require playtesting.
+Phase 1B movement is implemented and verified; combat, damage, resources, and round flow remain future work. Implemented movement values are identified below. Planned move names, combat timings, damage values, resource values, and round rules remain **provisional** and require playtesting.
 
 ## Match concept
 
@@ -36,8 +36,8 @@ Planned signature moves:
 
 | Action | Intended behavior |
 | --- | --- |
-| Move | Walk left or right; fighters automatically face one another when neutral rules allow |
-| Jump | Fixed initial jump impulse with air control; no double jump initially |
+| Move | **Implemented:** walk left or right; fighters automatically face one another |
+| Jump | **Implemented:** fixed initial jump impulse with 75% horizontal air control and no double jump |
 | Block | Hold away from the opponent; blocks eligible attacks while grounded or airborne as tuned |
 | Light attack | Fast startup, low damage, short recovery, combo starter |
 | Heavy attack | Slower startup, higher damage and knockback, punish tool |
@@ -101,23 +101,28 @@ Charge is capped at 60 simulation frames for scaling purposes. Taking a hit inte
 
 Shared provisional values:
 
-- Gravity: **2,200 units/s²**
-- Maximum horizontal arena distance: to be set from the first arena dimensions
+- Gravity: **2,200 units/s²** (**implemented**)
+- Horizontal stage edges: **x=80 and x=1,200**; fighter centers are inset by half their body width (**implemented**)
+- Ground plane: **564 world units** (**implemented**)
+- Movement body box: **64 units wide × 112 units tall** (**implemented**)
+- Air-control multiplier: **0.75** (**implemented**)
 - Base light hit-stun: **12 frames**
 - Base heavy hit-stun: **20 frames**
 - Blocked damage (chip): **10%** of normal damage, rounded consistently
 - Round timer: **99 seconds**
 
-Coordinate scale, collision dimensions, input buffer length, knockback units, combo scaling, and frame advantage require implementation experiments before values are chosen.
+Knockback units, combat input buffering, combo scaling, and frame advantage require implementation experiments before values are chosen.
 
-## Planned keyboard controls
+Movement is integrated at a fixed 60 Hz. Left and right held together cancel. Jump starts only from a just-pressed command while grounded; further jump presses in the air are ignored, and holding the key through landing does not jump again. Body collision uses the implemented axis-aligned boxes. When boxes overlap, fighters are separated horizontally in their prior left/right order, sharing the correction unless a stage wall forces the remaining correction onto the other fighter. A sufficiently high jump can clear the other body box and cross over, after which both fighters turn to face each other.
 
-The first local input layout is provisional and must be checked for keyboard ghosting.
+## Keyboard controls
+
+Movement bindings are implemented and verified with simultaneous automated input. Attack bindings remain provisional. Physical keyboard ghosting still depends on the user's keyboard hardware.
 
 | Action | Player 1 | Player 2 |
 | --- | --- | --- |
-| Move left / right | `A` / `D` | Left / Right arrows |
-| Jump | `W` | Up arrow |
+| Move left / right (**implemented**) | `A` / `D` | Left / Right arrows |
+| Jump (**implemented**) | `W` | Up arrow |
 | Light attack | `F` | `K` |
 | Heavy attack / hold to charge | `G` | `L` |
 | Special attack | `H` | `;` (semicolon) |

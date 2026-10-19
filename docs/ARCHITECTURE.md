@@ -2,7 +2,7 @@
 
 ## Status of this document
 
-Sections labeled **Implemented** describe the Phase 1A code. Other sections remain proposed future architecture. The core build, smoke test, native Linux renderer, and browser renderer are verified; Windows and macOS remain untested targets.
+Sections labeled **Implemented** describe the code through Phase 1B. Combat, audio, replay storage, and networking sections remain proposed future architecture. The core tests plus native Linux and browser movement/rendering are verified; Windows and macOS remain untested targets.
 
 ## Design goals
 
@@ -17,16 +17,16 @@ Sections labeled **Implemented** describe the Phase 1A code. Other sections rema
 
 | Path | Responsibility |
 | --- | --- |
-| `src/core/` | Implemented: platform-neutral initial game state, fixed-step constants, and tick advancement |
-| `src/game/` | Match orchestration, fighter state, rounds, stage state |
+| `src/core/` | Implemented: platform-neutral game state, movement/physics rules, fixed-step constants, and tick advancement |
+| `src/game/` | Implemented: composed fighter identity, tuning, position, velocity, collision, grounded, facing, and placeholder health state; future match/round state belongs here |
 | `src/combat/` | Moves, hit/hurt collision, damage, hit-stun, knockback, combos |
-| `src/input/` | Device sampling, bindings, and conversion to frame commands |
-| `src/render/` | Implemented in Phase 1A: raylib render-target ownership, placeholder arena/fighters, HUD, and scaling |
+| `src/input/` | Implemented: platform-neutral per-fighter commands plus raylib keyboard sampling and tick consumption |
+| `src/render/` | Implemented: raylib render-target ownership, state-driven placeholder arena/fighters, control overlay, HUD, and scaling |
 | `assets/` | Character, arena, and audio content loaded by presentation systems |
-| `tests/` | Implemented initially: headless initialization and simulation-frame advancement smoke test |
+| `tests/` | Implemented: headless initialization, movement, jump, gravity, landing, boundary, facing, collision, simultaneous-input, and repeated-state tests |
 | `scripts/` | Implemented initially: desktop and Emscripten configure/build/run helpers |
 
-`src/main.cpp` is the implemented platform entry point and owns window lifetime, timing accumulation, and native/browser loop scheduling. The `game`, `combat`, and `input` directory responsibilities remain proposed for later phases.
+`src/main.cpp` is the implemented platform entry point and owns window lifetime, timing accumulation, input sampling coordination, and native/browser loop scheduling. Combat remains proposed for later phases.
 
 ## Proposed runtime data flow
 
@@ -47,11 +47,11 @@ The authoritative state changes only during fixed simulation ticks. Rendering an
 
 ## Application entry point — Implemented
 
-`src/main.cpp` initializes the raylib window and a small application context containing `Game`, `GameRenderer`, and the timing accumulator. Native builds use a conventional loop. Emscripten builds register `BrowserMainLoop` with `emscripten_set_main_loop_arg`, so browser code does not enter a blocking loop. The browser callback does not call raylib's synchronous `WindowShouldClose()` or target-FPS wait paths; requestAnimationFrame owns scheduling. Both paths call the same `RunFrame` function and keep gameplay rules out of the entry point.
+`src/main.cpp` initializes the raylib window and a small application context containing `Game`, `KeyboardInput`, `GameRenderer`, and the timing accumulator. Native builds use a conventional loop. Emscripten builds register `BrowserMainLoop` with `emscripten_set_main_loop_arg`, so browser code does not enter a blocking loop. The browser callback does not call raylib's synchronous `WindowShouldClose()` or target-FPS wait paths; requestAnimationFrame owns scheduling. Both paths call the same `RunFrame` function and keep gameplay rules out of the entry point.
 
 ## Game loop — Implemented foundation
 
-Rendering runs at the platform frame rate while an accumulator advances zero or more fixed simulation ticks of `1/60` second. Frame delta is clamped to 250 ms, bounding a single rendered frame to at most 15 catch-up ticks. The only current simulation behavior increments the authoritative frame counter; per-player commands begin in Phase 1B.
+Rendering runs at the platform frame rate while an accumulator advances zero or more fixed simulation ticks of `1/60` second. Frame delta is clamped to 250 ms, bounding a single rendered frame to at most 15 catch-up ticks. Input is sampled once per rendered frame. Held values remain available to every catch-up tick, while a pending jump press is consumed by only the first tick and stays buffered if no simulation tick is due yet.
 
 ```mermaid
 flowchart TD
@@ -67,25 +67,22 @@ flowchart TD
 
 The browser loop and rendering are verified in automated Chrome testing. The native loop, rendering, and clean window-manager shutdown are verified in a Linux X11/OpenGL session.
 
-## Input system
+## Input system — Implemented
 
-**Proposed:** Platform-specific devices map to a compact `FrameInput`-style value containing directional intent and discrete button states. Gameplay sees commands such as held, pressed, and released actions—not raylib keys. Commands should be serializable and comparable so later systems can record, replay, predict, and correct input histories.
+`FrameCommands` contains one `FighterCommand` per player. Each command records held left, held right, held jump, and just-pressed jump states. `KeyboardInput` is the only movement component that queries raylib: it maps `A`/`D`/`W` and the arrow keys, buffers jump edges until a simulation tick consumes them, and returns a plain C++ value. `Game` never queries devices, so tests and future replay, AI, or network sources can provide the same commands directly.
 
-Local bindings will initially support two players on one keyboard. Controller support is planned but not part of the first gameplay milestone.
+Local bindings support two players on one keyboard. Controller support and remapping remain future work.
 
-## Fighter state
+## Fighter state — Implemented movement subset
 
-**Proposed:** Each fighter owns or references composed state for:
+Each `Fighter` currently composes:
 
-- identity and tuning data;
-- position, velocity, facing, and grounded state;
-- health and special energy;
-- current combat state, move, and frame counters;
-- hit-stun, block-stun, invulnerability, and recovery;
-- active hitbox/hurtbox data;
-- round-local combo and hit tracking.
+- identity, movement speed, jump velocity, and collision dimensions;
+- platform-neutral position and velocity values;
+- grounded state and facing direction;
+- static placeholder health used by the existing HUD.
 
-Simulation state must not contain textures, sounds, or other renderer-owned resources. Fighter definitions should carry data such as movement speeds, move timings, damage, and box definitions separately from mutable match state.
+Combat state, special energy, moves, hit/hurt boxes, stun, and combo tracking are not implemented. Simulation state contains no textures, sounds, raylib vectors, or other presentation resources. Combat tuning may be split into immutable definitions when Phase 1C needs it; Phase 1B keeps the small movement tuning set directly on each composed fighter value.
 
 ## Combat system
 
@@ -93,15 +90,19 @@ Simulation state must not contain textures, sounds, or other renderer-owned reso
 
 Moves will be described by frame data: startup, active, recovery, damage, hit-stun, block-stun, knockback, energy cost/gain, and box definitions. Combat should emit presentation events rather than directly playing sound or drawing effects.
 
-## Collision detection
+## Collision detection — Movement body collision implemented
 
-**Proposed:** Phase 1 uses simple axis-aligned rectangles in world coordinates for stage collision, hurtboxes, and hitboxes. Collision queries remain in the simulation layer and use gameplay-owned geometry types or adapters independent of raylib. Broad-phase optimization is unnecessary for two fighters until profiling demonstrates a need.
+Movement uses simple axis-aligned body rectangles in world coordinates. Each body is 64 units wide and 112 units tall, anchored at the fighter's bottom-center position. Fighter centers are constrained so the entire body remains between stage edges x=80 and x=1200, and the ground plane is y=564.
+
+After both fighters integrate movement for a tick, overlapping body boxes are separated horizontally according to their left/right order before integration. Each receives half the correction; if a stage wall prevents one half, the unresolved amount moves the other fighter. Horizontal velocity toward the collision is cleared. Vertically separated boxes do not collide, so a sufficiently high jump may cross over; facing is recalculated from final horizontal positions after resolution. This stable, symmetric rule prevents grounded fighters from walking through each other without introducing combat hit/hurt boxes.
+
+**Proposed for combat:** Attack hurtboxes and hitboxes will use gameplay-owned geometry independent of raylib. Broad-phase optimization is unnecessary for two fighters until profiling demonstrates a need.
 
 Each attack activation needs a stable identifier so one hitbox does not damage the same target repeatedly unless the move explicitly permits multiple hits.
 
 ## Renderer and audio
 
-**Renderer implemented:** `GameRenderer` translates read-only `GameState` into raylib draw calls and owns a 1280×720 render texture. It draws the Phase 1A arena, placeholders, and HUD at logical resolution, then scales and letterboxes the result to the actual window. Core state contains no raylib types, and rendering does not mutate it.
+**Renderer implemented:** `GameRenderer` translates read-only `GameState` into raylib draw calls and owns a 1280×720 render texture. It draws the arena, fighters at their simulated positions/facing, a controls overlay, and the HUD at logical resolution, then scales and letterboxes the result to the actual window. Core state contains no raylib types, and rendering does not mutate it.
 
 **Audio proposed:** No audio resources or presentation layer exist yet. A later audio layer will consume events and own sound/music resources without changing simulation outcomes.
 
@@ -111,7 +112,7 @@ Placeholder primitives should precede final assets. Art dimensions must not sile
 
 **Proposed:** Assets are grouped by purpose under `assets/characters/`, `assets/arenas/`, and `assets/audio/`. A later asset manifest may map stable logical identifiers to files. Source/license attribution requirements will be recorded alongside imported content. Generated build copies are ignored; authored source assets remain version-controlled.
 
-## Native and WebAssembly builds — Implemented, platform verification pending
+## Native and WebAssembly builds — Implemented and verified on Linux
 
 CMake defines `arena_clash_core`, `ArenaClash`, and `arena_clash_core_tests`. FetchContent downloads the official raylib 6.2 tag archive and verifies its SHA-256. `ARENA_CLASH_BUILD_APPLICATION=OFF` permits headless core tests without downloading or configuring raylib.
 
@@ -138,13 +139,15 @@ Networking will not be embedded in fighter or combat code. Before online play, t
 
 ## Implemented architecture
 
-Phase 1A establishes these validated boundaries:
+Phases 1A and 1B establish these validated boundaries:
 
-- `arena_clash_core` contains only standard C++ game state and fixed-tick advancement.
+- `arena_clash_core` contains only standard C++ state, frame commands, and fixed-tick movement/collision rules.
+- `KeyboardInput` owns raylib key mapping and emits platform-neutral command values; a pending press is consumed once even during multi-tick catch-up.
 - `GameRenderer` owns raylib resources and observes `const GameState&`.
 - `main.cpp` owns platform lifecycle, wall-clock accumulation, and loop registration.
 - Native and browser paths share `RunFrame`, `Game`, and rendering code; only scheduling differs.
 - Generated dependencies and outputs live under target-specific ignored build directories.
 - The initial core state can be recreated with `Game::initialize`; general state serialization/restoration is deferred.
+- Replaying the same tested command sequence produces the same fighter state after every tick in the verified Linux test environment.
 
-Input commands, combat, match flow, audio, replay storage, deterministic state hashing, and rollback remain proposed. Fixed ticks and clean boundaries are preparation for those systems, not evidence of cross-platform determinism.
+Combat, match flow, audio, replay storage, deterministic state hashing, and rollback remain proposed. Fixed ticks and repeatable same-build tests are preparation for those systems, not evidence of cross-platform determinism.

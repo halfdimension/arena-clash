@@ -1,4 +1,5 @@
 #include "core/Game.hpp"
+#include "input/KeyboardInput.hpp"
 #include "render/GameRenderer.hpp"
 
 #include "raylib.h"
@@ -27,19 +28,22 @@ constexpr const char* kPlatformName = "Unknown platform";
 
 struct ApplicationContext {
     arena::Game game;
+    arena::KeyboardInput input;
     arena::GameRenderer renderer;
     double accumulatorSeconds = 0.0;
     bool firstFramePending = true;
 };
 
 void RunFrame(ApplicationContext& application) {
+    application.input.sample();
+
     const double frameDeltaSeconds = std::clamp(
         static_cast<double>(GetFrameTime()), 0.0, kMaximumFrameDeltaSeconds);
     application.accumulatorSeconds += frameDeltaSeconds;
 
     // A stalled render frame may catch up, but the delta clamp bounds the work to 15 ticks.
     while (application.accumulatorSeconds >= arena::kFixedDeltaSeconds) {
-        application.game.advanceSimulation(arena::kFixedDeltaSeconds);
+        application.game.advanceSimulation(application.input.consumeForSimulationTick());
         application.accumulatorSeconds -= arena::kFixedDeltaSeconds;
     }
 

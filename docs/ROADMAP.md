@@ -49,6 +49,8 @@ The roadmap describes intended scope. A milestone is complete only when its acce
 
 ## Phase 1B — Two fighters and movement
 
+**Status:** Complete. Data-backed fighter state, per-player commands, fixed-tick movement, jumping, gravity, facing, stage/body collision, state-driven rendering, and headless coverage are implemented. Replaying the tested command stream produces the same state at every tick. Automated key-driven runtime checks passed on native Linux and Chrome/WebAssembly; details are recorded in `docs/STATUS.md` and `docs/CHANGELOG.md`.
+
 **Objectives**
 
 - Introduce Volt and Ember as data-backed fighters.

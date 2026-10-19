@@ -2,19 +2,30 @@
 
 > An original 2D one-on-one fighting game built for responsive local play, portable native builds, and a future rollback-ready online mode.
 
-**Project status:** Phase 1A complete. The platform-neutral core tests pass, and both the native Linux and Emscripten builds render successfully in verified Linux environments. Phase 1B movement and input work has not started.
+**Project status:** Phase 1B complete. Volt and Ember can move and jump simultaneously through fixed-tick commands, and the behavior is verified in native Linux and Chrome/WebAssembly builds. Combat begins in Phase 1C and is not implemented yet.
 
 ## Current implementation
 
-- C++17 core state with a fixed 60 Hz simulation tick
+- C++17 fighter state and movement simulation with a fixed 60 Hz tick
 - Accumulator-based desktop loop with a 250 ms frame-delta clamp
 - Verified Emscripten callback-based browser loop using requestAnimationFrame scheduling
+- Per-player held and just-pressed commands produced by a raylib keyboard adapter
+- Walking, air control, jumping, gravity, landing, stage bounds, body collision, and automatic facing
 - 1280×720 logical render target with aspect-preserving window scaling
-- Primitive-rendered atmospheric arena, distinct Volt and Ember placeholders, health HUD, round label, simulation/FPS diagnostics, and platform label
-- Headless core-state smoke test
+- Primitive-rendered atmospheric arena, state-driven Volt and Ember placeholders, control overlay, health HUD, round label, simulation/FPS diagnostics, and platform label
+- Headless movement and state-sequence tests
 - CMake FetchContent dependency on the official raylib 6.2 tag archive, verified by SHA-256
 
-Movement, jumping, combat, input commands, audio, AI, and networking are not implemented.
+Combat, damage, mutable health, attacks, audio, AI, and networking are not implemented.
+
+## Controls
+
+| Fighter | Move | Jump |
+| --- | --- | --- |
+| VOLT (Player 1) | `A` / `D` | `W` |
+| EMBER (Player 2) | Left / Right arrows | Up arrow |
+
+Both players can act at the same time. Opposing left/right inputs for one fighter cancel, and holding jump does not trigger another jump after landing.
 
 ## Technology
 
@@ -54,7 +65,7 @@ Or use the helper that performs those steps and launches the game:
 ./scripts/run-desktop.sh
 ```
 
-The first configure downloads raylib 6.2. This path is verified on Ubuntu 22.04 with CMake 3.22.1 and GNU 11.4.0; the application opened, rendered the complete Phase 1A scene, and closed cleanly.
+The first configure downloads raylib 6.2. This path is verified on Ubuntu 22.04 with CMake 3.22.1 and GNU 11.4.0; the application accepted simultaneous two-player movement/jump input, rendered the resulting state, landed both fighters, and closed cleanly.
 
 ## Browser build
 
@@ -70,7 +81,7 @@ The script configures `build/web`, builds `arena-clash.html` plus its JavaScript
 PORT=8000 ./scripts/run-web.sh
 ```
 
-This path is verified with Emscripten 6.0.12 and automated Google Chrome 153 testing on Linux. The arena, Volt, Ember, health bars, and HUD rendered without a JavaScript or WebAssembly runtime exception.
+This path is verified with Emscripten 6.0.12 and automated Google Chrome 153 testing on Linux. The arena, moving/jumping Volt and Ember, controls, health bars, and HUD rendered without a JavaScript or WebAssembly runtime exception.
 
 ## Core tests
 
@@ -86,7 +97,7 @@ ctest --test-dir build/tests --output-on-failure
 
 ## Architecture
 
-The entry point owns platform lifecycle and fixed-step scheduling. `Game` owns platform-neutral authoritative state and advances only on fixed ticks. `GameRenderer` observes that state and owns all raylib drawing/resources. This keeps the simulation free of raylib and leaves room for future per-frame commands, replay, state restoration, and rollback work without implementing those systems prematurely.
+The entry point owns platform lifecycle and fixed-step scheduling. `KeyboardInput` converts device state into per-player commands, `Game` consumes those values and owns platform-neutral authoritative movement state, and `GameRenderer` observes that state and owns all raylib drawing/resources. This keeps the simulation free of raylib and lets future local, replay, AI, or network sources supply the same command type.
 
 See [Architecture](docs/ARCHITECTURE.md), [Game Design](docs/GAME_DESIGN.md), [Development Roadmap](docs/ROADMAP.md), and [Project Status](docs/STATUS.md) for the detailed boundaries and verified state.
 
@@ -96,8 +107,8 @@ See [Architecture](docs/ARCHITECTURE.md), [Game Design](docs/GAME_DESIGN.md), [D
 | --- | --- | --- |
 | 0 | Repository foundation and persistent documentation | Complete |
 | 1A | Native and browser window setup | Complete — Linux desktop and browser verified |
-| 1B | Two fighters and movement | Next |
-| 1C | Basic combat and health | Planned |
+| 1B | Two fighters and movement | Complete — Linux desktop and browser verified |
+| 1C | Basic combat and health | Next |
 | 1D | Special and charged attacks | Planned |
 | 1E | Complete local matches | Planned |
 | 2 | Animations and visual polish | Planned |

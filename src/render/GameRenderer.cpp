@@ -59,13 +59,13 @@ void DrawArenaBackdrop(std::uint64_t simulationFrame) {
     DrawLine(540, 286, 740, 286, Color{139, 110, 204, 45});
 }
 
-void DrawFighter(const FighterState& fighter) {
+void DrawFighter(const Fighter& fighter) {
     const bool isVolt = fighter.id == FighterId::Volt;
     const Color primary = isVolt ? kVolt : kEmber;
     const Color secondary = isVolt ? kVoltGlow : kEmberGlow;
-    const float x = fighter.positionX;
-    const float floorY = fighter.positionY;
-    const float facing = isVolt ? 1.0F : -1.0F;
+    const float x = fighter.position.x;
+    const float floorY = fighter.position.y - 12.0F;
+    const float facing = fighter.facing == FacingDirection::Right ? 1.0F : -1.0F;
 
     DrawEllipse(static_cast<int>(x), static_cast<int>(floorY + 22.0F), 72.0F, 15.0F,
                 Color{0, 0, 0, 115});
@@ -105,7 +105,7 @@ void DrawFighter(const FighterState& fighter) {
     }
 }
 
-void DrawHealthBar(const FighterState& fighter, int x, bool alignRight) {
+void DrawHealthBar(const Fighter& fighter, int x, bool alignRight) {
     constexpr int kBarWidth = 438;
     constexpr int kBarHeight = 24;
     const float healthRatio = std::clamp(
@@ -131,6 +131,9 @@ void DrawHud(const GameState& state, const char* platformName, int framesPerSeco
     DrawCircleLines(640, 69, 46.0F, Color{185, 151, 236, 190});
     DrawCenteredText("ROUND 1", 640, 41, 18, Color{222, 213, 240, 255});
     DrawCenteredText("99", 640, 62, 30, RAYWHITE);
+
+    DrawCenteredText("VOLT: A / D MOVE, W JUMP     |     EMBER: ARROWS MOVE / JUMP",
+                     kLogicalWidth / 2, 653, 16, Color{204, 210, 231, 220});
 
     char debugLine[128];
     std::snprintf(debugLine, sizeof(debugLine), "60 Hz SIM  |  TICK %llu  |  %d FPS",

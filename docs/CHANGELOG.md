@@ -6,6 +6,22 @@ The format is inspired by Keep a Changelog. The project does not yet have a rele
 
 ## Unreleased
 
+### Added — 2026-10-19 (Phase 1B movement)
+
+- Added composed VOLT and EMBER state with platform-neutral position, velocity, movement tuning, grounded/facing state, collision dimensions, identity, and placeholder health.
+- Added per-player held/pressed command values and a raylib keyboard adapter for `A`/`D`/`W` and the arrow keys; pending jump edges are consumed by one fixed simulation tick.
+- Added fixed-tick walking, air control, jumping, gravity, landing, stage constraints, body collision, and automatic facing without introducing raylib into the simulation library.
+- Connected fighter rendering and orientation to authoritative state and added a compact controls overlay.
+- Expanded the headless test executable to cover movement, conflicting directions, jumping, gravity, landing, midair and held-jump rules, boundaries, simultaneous input, collision, facing, and same-command state-sequence repeatability.
+
+### Verified — 2026-10-19 (Phase 1B completion)
+
+- Built the native Linux Release application with CMake 3.22.1, GNU 11.4.0, and raylib 6.2; the expanded CTest suite passed 1 of 1 test executables.
+- Exercised both players simultaneously in the X11 build with automated movement and jump input, visually inspected captured movement/airborne/landed frames, and confirmed clean exit through the window-manager close path.
+- Built the browser application with Emscripten 6.0.12 and raylib 6.2, then exercised simultaneous movement and held jump controls in Google Chrome 153.
+- Captured and inspected browser frames showing movement, jumping, landing, facing, arena, fighters, controls, and HUD; Chrome reported WebGL error state 0 and no JavaScript or WebAssembly runtime exception.
+- Confirmed the same command sequence produces exactly matching fighter state on every tested fixed tick in two independent simulations. This is same-build repeatability, not a cross-platform determinism claim.
+
 ### Verified — 2026-10-19 (Phase 1A completion)
 
 - Configured and compiled the native Linux Release target with CMake 3.22.1, GNU 11.4.0, and raylib 6.2 after the required X11 development headers became available.
