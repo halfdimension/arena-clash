@@ -2,7 +2,7 @@
 
 ## Status of this document
 
-Unless a section explicitly says **Implemented**, it describes the **proposed** architecture. As of Phase 0, only the repository directories and documentation exist; there is no application, game loop, build configuration, or runtime behavior.
+Sections labeled **Implemented** describe the Phase 1A code. Other sections remain proposed future architecture. The core build, smoke test, native Linux renderer, and browser renderer are verified; Windows and macOS remain untested targets.
 
 ## Design goals
 
@@ -13,20 +13,20 @@ Unless a section explicitly says **Implemented**, it describes the **proposed** 
 - A native and WebAssembly application using the same gameplay simulation
 - A practical path toward rollback networking without prematurely implementing it
 
-## Proposed source ownership
+## Source ownership
 
 | Path | Responsibility |
 | --- | --- |
-| `src/core/` | Application lifecycle, fixed-step timing, shared low-level types |
+| `src/core/` | Implemented: platform-neutral initial game state, fixed-step constants, and tick advancement |
 | `src/game/` | Match orchestration, fighter state, rounds, stage state |
 | `src/combat/` | Moves, hit/hurt collision, damage, hit-stun, knockback, combos |
 | `src/input/` | Device sampling, bindings, and conversion to frame commands |
-| `src/render/` | raylib drawing, cameras, animation presentation, HUD, effects |
+| `src/render/` | Implemented in Phase 1A: raylib render-target ownership, placeholder arena/fighters, HUD, and scaling |
 | `assets/` | Character, arena, and audio content loaded by presentation systems |
-| `tests/` | Unit and integration tests, especially headless simulation tests |
-| `scripts/` | Repeatable developer and build-support utilities |
+| `tests/` | Implemented initially: headless initialization and simulation-frame advancement smoke test |
+| `scripts/` | Implemented initially: desktop and Emscripten configure/build/run helpers |
 
-These directories are present. Their runtime contents are not implemented.
+`src/main.cpp` is the implemented platform entry point and owns window lifetime, timing accumulation, and native/browser loop scheduling. The `game`, `combat`, and `input` directory responsibilities remain proposed for later phases.
 
 ## Proposed runtime data flow
 
@@ -45,13 +45,13 @@ flowchart LR
 
 The authoritative state changes only during fixed simulation ticks. Rendering and audio may interpolate or present that state but must not modify combat outcomes.
 
-## Application entry point
+## Application entry point — Implemented
 
-**Proposed:** A thin platform entry point will configure the application, initialize raylib-facing services, and hand control to the game application. It should contain no fighter or combat rules. Native targets may use a conventional loop; Emscripten may register a browser main-loop callback. Both paths must invoke the same frame and fixed-tick application functions.
+`src/main.cpp` initializes the raylib window and a small application context containing `Game`, `GameRenderer`, and the timing accumulator. Native builds use a conventional loop. Emscripten builds register `BrowserMainLoop` with `emscripten_set_main_loop_arg`, so browser code does not enter a blocking loop. The browser callback does not call raylib's synchronous `WindowShouldClose()` or target-FPS wait paths; requestAnimationFrame owns scheduling. Both paths call the same `RunFrame` function and keep gameplay rules out of the entry point.
 
-## Game loop
+## Game loop — Implemented foundation
 
-**Proposed:** Rendering may run at the platform frame rate, while an accumulator advances zero or more fixed simulation ticks of `1/60` second. Each tick consumes exactly one command per player.
+Rendering runs at the platform frame rate while an accumulator advances zero or more fixed simulation ticks of `1/60` second. Frame delta is clamped to 250 ms, bounding a single rendered frame to at most 15 catch-up ticks. The only current simulation behavior increments the authoritative frame counter; per-player commands begin in Phase 1B.
 
 ```mermaid
 flowchart TD
@@ -65,7 +65,7 @@ flowchart TD
     G --> A
 ```
 
-The accumulator will require a maximum catch-up policy so a stalled frame cannot cause an unbounded update loop. The exact policy remains to be selected and tested in Phase 1A.
+The browser loop and rendering are verified in automated Chrome testing. The native loop, rendering, and clean window-manager shutdown are verified in a Linux X11/OpenGL session.
 
 ## Input system
 
@@ -101,7 +101,9 @@ Each attack activation needs a stable identifier so one hitbox does not damage t
 
 ## Renderer and audio
 
-**Proposed:** The renderer translates read-only game state and presentation events into raylib draw calls. It owns textures, fonts, camera behavior, HUD presentation, animation selection, and effects. The audio presentation layer similarly consumes events and owns sound/music resources.
+**Renderer implemented:** `GameRenderer` translates read-only `GameState` into raylib draw calls and owns a 1280×720 render texture. It draws the Phase 1A arena, placeholders, and HUD at logical resolution, then scales and letterboxes the result to the actual window. Core state contains no raylib types, and rendering does not mutate it.
+
+**Audio proposed:** No audio resources or presentation layer exist yet. A later audio layer will consume events and own sound/music resources without changing simulation outcomes.
 
 Placeholder primitives should precede final assets. Art dimensions must not silently define gameplay collision geometry.
 
@@ -109,9 +111,11 @@ Placeholder primitives should precede final assets. Art dimensions must not sile
 
 **Proposed:** Assets are grouped by purpose under `assets/characters/`, `assets/arenas/`, and `assets/audio/`. A later asset manifest may map stable logical identifiers to files. Source/license attribution requirements will be recorded alongside imported content. Generated build copies are ignored; authored source assets remain version-controlled.
 
-## Native and WebAssembly builds
+## Native and WebAssembly builds — Implemented, platform verification pending
 
-**Proposed:** CMake will define a reusable game/simulation target and a thin application target. Native builds will locate or fetch an explicitly pinned raylib 6.2 according to a dependency policy chosen in Phase 1A. Browser builds will use the Emscripten CMake toolchain and package required assets.
+CMake defines `arena_clash_core`, `ArenaClash`, and `arena_clash_core_tests`. FetchContent downloads the official raylib 6.2 tag archive and verifies its SHA-256. `ARENA_CLASH_BUILD_APPLICATION=OFF` permits headless core tests without downloading or configuring raylib.
+
+Native builds use `build/desktop`. Browser builds use the Emscripten toolchain in `build/web`, set raylib's `PLATFORM` to `Web`, emit `arena-clash.html`, and use `web/shell.html`. Keeping these directories separate prevents incompatible toolchain caches and raylib artifacts from being shared.
 
 ```mermaid
 flowchart TB
@@ -124,7 +128,7 @@ flowchart TB
     App --> Web
 ```
 
-The first build milestone must verify at least one native development environment and one browser build. Linux, Windows, macOS, and browser support must be reported individually and only after testing.
+The core target and CTest test have been built on Linux. The Emscripten 6.0.12 output is verified in headless Google Chrome 153 with WebGL and the logical render texture active. The native Linux Release target is verified using raylib's X11 backend and an Intel/Mesa OpenGL 4.6 context. Windows and macOS remain untested targets.
 
 ## Future multiplayer integration
 
@@ -134,4 +138,13 @@ Networking will not be embedded in fighter or combat code. Before online play, t
 
 ## Implemented architecture
 
-Phase 0 contains only this documented proposal and the empty source/asset/test/script directory structure. No runtime architecture has yet been validated in code.
+Phase 1A establishes these validated boundaries:
+
+- `arena_clash_core` contains only standard C++ game state and fixed-tick advancement.
+- `GameRenderer` owns raylib resources and observes `const GameState&`.
+- `main.cpp` owns platform lifecycle, wall-clock accumulation, and loop registration.
+- Native and browser paths share `RunFrame`, `Game`, and rendering code; only scheduling differs.
+- Generated dependencies and outputs live under target-specific ignored build directories.
+- The initial core state can be recreated with `Game::initialize`; general state serialization/restoration is deferred.
+
+Input commands, combat, match flow, audio, replay storage, deterministic state hashing, and rollback remain proposed. Fixed ticks and clean boundaries are preparation for those systems, not evidence of cross-platform determinism.

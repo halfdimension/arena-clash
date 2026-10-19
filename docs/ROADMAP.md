@@ -24,6 +24,8 @@ The roadmap describes intended scope. A milestone is complete only when its acce
 
 ## Phase 1A — Native and browser window setup
 
+**Status:** Complete. The application, renderer, fixed-step lifecycle, build paths, scripts, and core smoke test are implemented. Core tests pass; the native Linux executable and browser output both compile, render the Phase 1A scene, and shut down or remain scheduled through their documented lifecycle paths. Verification details are recorded in `docs/STATUS.md` and `docs/CHANGELOG.md`.
+
 **Objectives**
 
 - Establish the smallest maintainable application and build configuration.
