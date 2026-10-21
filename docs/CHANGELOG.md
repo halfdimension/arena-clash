@@ -6,6 +6,19 @@ The format is inspired by Keep a Changelog. The project does not yet have a rele
 
 ## Unreleased
 
+### Added — 2026-10-21 (Phase 2A static character sprites)
+
+- Replaced successful VOLT and EMBER body draws with their original RGBA neutral PNG textures while retaining the procedural bodies as per-fighter load-failure fallbacks.
+- Added character-specific texture-space pivots and uniform scales, including pivot-corrected horizontal mirroring that keeps the world-space ground anchor fixed.
+- Split fighter backdrop effects, body rendering, foreground feedback, projectiles, debug boxes, and HUD into explicit layers so the static art does not suppress combat presentation.
+- Added renderer-owned texture lifetime management, executable-relative native asset lookup/copying, and Emscripten preloading at `/assets/characters`.
+
+### Verified — 2026-10-21 (Phase 2A static character sprites)
+
+- Built the GNU/Linux desktop application and Emscripten 6.0.12 browser application; the browser output includes a 2.1 MB `arena-clash.data` package with both neutral PNGs.
+- Captured and inspected Chrome 153/WebAssembly frames confirming both assets load with transparency, preserve aspect ratio, align at their ground pivots, face inward, track a jump, remain below the HUD, and retain charge/block feedback and `F1` hurtboxes.
+- The native runtime remained unavailable because the environment has no X11 display. The Phase 2A browser pass did not recapture short attack-active, hit/impact, projectile, or KO effect windows; prior milestones verified those effects before the body replacement, and their draw paths remain independent.
+
 ### Added — 2026-10-21 (Phase 1E local match flow)
 
 - Added platform-neutral `RoundIntro`, `Fighting`, `RoundOver`, and `MatchOver` state with round result/reason, first-to-two scores, match winner, round number, and fixed-tick phase/timer counters.

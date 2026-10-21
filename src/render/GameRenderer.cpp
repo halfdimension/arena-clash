@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <string>
 
 namespace arena {
 namespace {
@@ -15,6 +16,53 @@ constexpr Color kVolt = {70, 220, 255, 255};
 constexpr Color kVoltGlow = {108, 109, 255, 255};
 constexpr Color kEmber = {255, 92, 56, 255};
 constexpr Color kEmberGlow = {255, 190, 67, 255};
+constexpr const char* kVoltNeutralTexturePath = "assets/characters/volt/neutral.png";
+constexpr const char* kEmberNeutralTexturePath = "assets/characters/ember/neutral.png";
+
+struct FighterSpriteDefinition {
+    Vector2 pivotPixels;
+    float scale;
+};
+
+constexpr FighterSpriteDefinition kVoltNeutralSprite = {{708.0F, 1209.0F}, 0.27F};
+constexpr FighterSpriteDefinition kEmberNeutralSprite = {{704.0F, 1221.0F}, 0.26F};
+
+struct FighterPose {
+    float x;
+    float floorY;
+    float facing;
+    Vector2 rearHand;
+    Vector2 frontHand;
+};
+
+Texture2D LoadCharacterTexture(const char* relativePath) {
+    std::string resolvedPath = relativePath;
+    if (!FileExists(resolvedPath.c_str())) {
+        resolvedPath = GetApplicationDirectory();
+        if (!resolvedPath.empty() && resolvedPath.back() != '/' && resolvedPath.back() != '\\') {
+            resolvedPath += '/';
+        }
+        resolvedPath += relativePath;
+    }
+
+    if (!FileExists(resolvedPath.c_str())) {
+        TraceLog(LOG_WARNING, "RENDERER: Character texture not found: %s; using fallback",
+                 relativePath);
+        return {};
+    }
+
+    Texture2D texture = LoadTexture(resolvedPath.c_str());
+    if (!IsTextureValid(texture)) {
+        TraceLog(LOG_WARNING, "RENDERER: Character texture failed to load: %s; using fallback",
+                 resolvedPath.c_str());
+        return {};
+    }
+
+    SetTextureFilter(texture, TEXTURE_FILTER_BILINEAR);
+    TraceLog(LOG_INFO, "RENDERER: Loaded character texture %s (%dx%d)",
+             resolvedPath.c_str(), texture.width, texture.height);
+    return texture;
+}
 
 void DrawCenteredText(const char* text, int centerX, int y, int fontSize, Color color) {
     DrawText(text, centerX - MeasureText(text, fontSize) / 2, y, fontSize, color);
@@ -59,16 +107,11 @@ void DrawArenaBackdrop(std::uint64_t simulationFrame) {
     DrawLine(540, 286, 740, 286, Color{139, 110, 204, 45});
 }
 
-void DrawFighter(const Fighter& fighter) {
+FighterPose GetFighterPose(const Fighter& fighter) {
     const bool isVolt = fighter.id == FighterId::Volt;
-    Color primary = isVolt ? kVolt : kEmber;
-    const Color secondary = isVolt ? kVoltGlow : kEmberGlow;
     const float x = fighter.position.x;
     const float floorY = fighter.position.y - 12.0F;
     const float facing = fighter.facing == FacingDirection::Right ? 1.0F : -1.0F;
-    if (fighter.hitFlashFrames > 0) {
-        primary = RAYWHITE;
-    }
 
     Vector2 rearHand = {x - facing * 46.0F, floorY - 66.0F};
     Vector2 frontHand = {x + facing * 48.0F, floorY - 90.0F};
@@ -112,72 +155,128 @@ void DrawFighter(const Fighter& fighter) {
         }
     }
 
-    DrawEllipse(static_cast<int>(x), static_cast<int>(floorY + 22.0F), 72.0F, 15.0F,
-                Color{0, 0, 0, 115});
-    DrawCircleGradient(Vector2{x, floorY - 80.0F}, 78.0F,
-                       Color{primary.r, primary.g, primary.b, 45}, Color{primary.r, primary.g, primary.b, 0});
+    return {x, floorY, facing, rearHand, frontHand};
+}
 
-    DrawLineEx(Vector2{x - 16.0F, floorY - 47.0F}, Vector2{x - 27.0F, floorY + 12.0F},
+void DrawFighterBackdropEffects(const Fighter& fighter) {
+    const FighterPose pose = GetFighterPose(fighter);
+    Color primary = fighter.id == FighterId::Volt ? kVolt : kEmber;
+    if (fighter.hitFlashFrames > 0) {
+        primary = RAYWHITE;
+    }
+
+    DrawEllipse(static_cast<int>(pose.x), static_cast<int>(pose.floorY + 22.0F), 72.0F, 15.0F,
+                Color{0, 0, 0, 115});
+    DrawCircleGradient(Vector2{pose.x, pose.floorY - 80.0F}, 78.0F,
+                       Color{primary.r, primary.g, primary.b, 45},
+                       Color{primary.r, primary.g, primary.b, 0});
+}
+
+void DrawProceduralFighterBody(const Fighter& fighter, const FighterPose& pose) {
+    const bool isVolt = fighter.id == FighterId::Volt;
+    Color primary = isVolt ? kVolt : kEmber;
+    const Color secondary = isVolt ? kVoltGlow : kEmberGlow;
+    if (fighter.hitFlashFrames > 0) {
+        primary = RAYWHITE;
+    }
+
+    DrawLineEx(Vector2{pose.x - 16.0F, pose.floorY - 47.0F},
+               Vector2{pose.x - 27.0F, pose.floorY + 12.0F},
                17.0F, kInk);
-    DrawLineEx(Vector2{x + 15.0F, floorY - 47.0F}, Vector2{x + 29.0F, floorY + 12.0F},
+    DrawLineEx(Vector2{pose.x + 15.0F, pose.floorY - 47.0F},
+               Vector2{pose.x + 29.0F, pose.floorY + 12.0F},
                17.0F, kInk);
-    DrawLineEx(Vector2{x - facing * 12.0F, floorY - 115.0F},
-               rearHand, 15.0F, kInk);
-    DrawLineEx(Vector2{x + facing * 12.0F, floorY - 112.0F},
-               frontHand,
+    DrawLineEx(Vector2{pose.x - pose.facing * 12.0F, pose.floorY - 115.0F},
+               pose.rearHand, 15.0F, kInk);
+    DrawLineEx(Vector2{pose.x + pose.facing * 12.0F, pose.floorY - 112.0F},
+               pose.frontHand,
                (fighter.currentMove == MoveId::Heavy || IsChargedMove(fighter.currentMove))
                    ? 20.0F
                    : 16.0F,
                primary);
 
-    DrawRectangleRounded(Rectangle{x - 29.0F, floorY - 128.0F, 58.0F, 88.0F},
+    DrawRectangleRounded(Rectangle{pose.x - 29.0F, pose.floorY - 128.0F, 58.0F, 88.0F},
                          0.25F, 5, kInk);
-    DrawRectangleRoundedLinesEx(Rectangle{x - 29.0F, floorY - 128.0F, 58.0F, 88.0F},
-                                0.25F, 5, 4.0F, primary);
-    DrawCircle(static_cast<int>(x), static_cast<int>(floorY - 153.0F), 28.0F, kInk);
-    DrawCircleLines(static_cast<int>(x), static_cast<int>(floorY - 153.0F), 29.0F, primary);
+    DrawRectangleRoundedLinesEx(
+        Rectangle{pose.x - 29.0F, pose.floorY - 128.0F, 58.0F, 88.0F},
+        0.25F, 5, 4.0F, primary);
+    DrawCircle(static_cast<int>(pose.x), static_cast<int>(pose.floorY - 153.0F), 28.0F, kInk);
+    DrawCircleLines(static_cast<int>(pose.x), static_cast<int>(pose.floorY - 153.0F), 29.0F,
+                    primary);
 
-    const float chestX = x + facing * 2.0F;
+    const float chestX = pose.x + pose.facing * 2.0F;
     if (isVolt) {
-        DrawTriangle(Vector2{chestX - 7.0F, floorY - 109.0F},
-                     Vector2{chestX + 10.0F, floorY - 109.0F},
-                     Vector2{chestX - 2.0F, floorY - 82.0F}, secondary);
-        DrawTriangle(Vector2{chestX - 2.0F, floorY - 91.0F},
-                     Vector2{chestX + 13.0F, floorY - 91.0F},
-                     Vector2{chestX - 2.0F, floorY - 67.0F}, secondary);
+        DrawTriangle(Vector2{chestX - 7.0F, pose.floorY - 109.0F},
+                     Vector2{chestX + 10.0F, pose.floorY - 109.0F},
+                     Vector2{chestX - 2.0F, pose.floorY - 82.0F}, secondary);
+        DrawTriangle(Vector2{chestX - 2.0F, pose.floorY - 91.0F},
+                     Vector2{chestX + 13.0F, pose.floorY - 91.0F},
+                     Vector2{chestX - 2.0F, pose.floorY - 67.0F}, secondary);
     } else {
-        DrawCircleGradient(Vector2{chestX, floorY - 91.0F}, 14.0F,
+        DrawCircleGradient(Vector2{chestX, pose.floorY - 91.0F}, 14.0F,
                            kEmberGlow, Color{255, 75, 40, 0});
-        DrawTriangle(Vector2{chestX, floorY - 113.0F},
-                     Vector2{chestX - 15.0F, floorY - 83.0F},
-                     Vector2{chestX + 15.0F, floorY - 83.0F}, kEmber);
+        DrawTriangle(Vector2{chestX, pose.floorY - 113.0F},
+                     Vector2{chestX - 15.0F, pose.floorY - 83.0F},
+                     Vector2{chestX + 15.0F, pose.floorY - 83.0F}, kEmber);
+    }
+}
+
+void DrawSpriteFighterBody(const Fighter& fighter, const Texture2D& texture,
+                           const FighterSpriteDefinition& sprite) {
+    const bool facingRight = fighter.facing == FacingDirection::Right;
+    const float width = static_cast<float>(texture.width);
+    const float height = static_cast<float>(texture.height);
+    const Rectangle source = {0.0F, 0.0F, facingRight ? width : -width, height};
+    const Rectangle destination = {fighter.position.x, fighter.position.y,
+                                   width * sprite.scale, height * sprite.scale};
+    const float pivotX = facingRight ? sprite.pivotPixels.x : width - sprite.pivotPixels.x;
+    const Vector2 origin = {pivotX * sprite.scale, sprite.pivotPixels.y * sprite.scale};
+    DrawTexturePro(texture, source, destination, origin, 0.0F, WHITE);
+}
+
+void DrawFighterBody(const Fighter& fighter, const Texture2D& texture,
+                     const FighterSpriteDefinition& sprite) {
+    const FighterPose pose = GetFighterPose(fighter);
+    if (IsTextureValid(texture)) {
+        DrawSpriteFighterBody(fighter, texture, sprite);
+        return;
     }
 
+    DrawProceduralFighterBody(fighter, pose);
+}
+
+void DrawFighterFeedbackEffects(const Fighter& fighter) {
+    const FighterPose pose = GetFighterPose(fighter);
+    const bool isVolt = fighter.id == FighterId::Volt;
+    const Color secondary = isVolt ? kVoltGlow : kEmberGlow;
+
     if (fighter.combatState == CombatState::Blocking) {
-        DrawCircleLines(static_cast<int>(x + facing * 52.0F),
-                        static_cast<int>(floorY - 93.0F), 42.0F,
+        DrawCircleLines(static_cast<int>(pose.x + pose.facing * 52.0F),
+                        static_cast<int>(pose.floorY - 93.0F), 42.0F,
                         fighter.blockFlashFrames > 0 ? RAYWHITE : secondary);
     }
     if (fighter.combatState == CombatState::Charging) {
         const float chargeRatio = static_cast<float>(fighter.chargeFrames) /
                                   static_cast<float>(GetCombatRules().maximumChargeFrames);
         const int chargeLevel = GetChargeLevel(fighter.chargeFrames);
-        DrawCircleLines(static_cast<int>(x), static_cast<int>(floorY - 91.0F),
+        DrawCircleLines(static_cast<int>(pose.x), static_cast<int>(pose.floorY - 91.0F),
                         48.0F + chargeRatio * 28.0F, secondary);
-        DrawCircleLines(static_cast<int>(x), static_cast<int>(floorY - 91.0F),
+        DrawCircleLines(static_cast<int>(pose.x), static_cast<int>(pose.floorY - 91.0F),
                         55.0F + chargeRatio * 36.0F,
                         Color{secondary.r, secondary.g, secondary.b, 120});
         if (isVolt) {
             const float reach = 54.0F + chargeRatio * 32.0F;
-            DrawLineEx(Vector2{x - reach, floorY - 105.0F},
-                       Vector2{x - 18.0F, floorY - 83.0F}, 3.0F + chargeLevel, kVolt);
-            DrawLineEx(Vector2{x + 16.0F, floorY - 102.0F},
-                       Vector2{x + reach, floorY - 76.0F}, 3.0F + chargeLevel, kVoltGlow);
+            DrawLineEx(Vector2{pose.x - reach, pose.floorY - 105.0F},
+                       Vector2{pose.x - 18.0F, pose.floorY - 83.0F},
+                       3.0F + chargeLevel, kVolt);
+            DrawLineEx(Vector2{pose.x + 16.0F, pose.floorY - 102.0F},
+                       Vector2{pose.x + reach, pose.floorY - 76.0F},
+                       3.0F + chargeLevel, kVoltGlow);
         } else {
             const float flameRadius = 12.0F + chargeRatio * 14.0F;
-            DrawCircleGradient(Vector2{x - 43.0F, floorY - 64.0F}, flameRadius,
+            DrawCircleGradient(Vector2{pose.x - 43.0F, pose.floorY - 64.0F}, flameRadius,
                                kEmberGlow, Color{255, 68, 30, 0});
-            DrawCircleGradient(Vector2{x + 43.0F, floorY - 64.0F}, flameRadius,
+            DrawCircleGradient(Vector2{pose.x + 43.0F, pose.floorY - 64.0F}, flameRadius,
                                kEmberGlow, Color{255, 68, 30, 0});
         }
     }
@@ -185,17 +284,18 @@ void DrawFighter(const Fighter& fighter) {
         fighter.attackPhase == AttackPhase::Active) {
         if (fighter.currentMove != MoveId::InfernoBurst &&
             !IsChargedMove(fighter.currentMove)) {
-            DrawCircleLines(static_cast<int>(frontHand.x), static_cast<int>(frontHand.y),
+            DrawCircleLines(static_cast<int>(pose.frontHand.x),
+                            static_cast<int>(pose.frontHand.y),
                             fighter.currentMove == MoveId::Heavy ? 28.0F : 18.0F,
                             secondary);
         }
     }
     if (fighter.hitFlashFrames > 0) {
         const float effectRadius = 18.0F + static_cast<float>(fighter.hitFlashFrames) * 4.0F;
-        DrawCircleLines(static_cast<int>(x), static_cast<int>(floorY - 92.0F),
+        DrawCircleLines(static_cast<int>(pose.x), static_cast<int>(pose.floorY - 92.0F),
                         effectRadius, RAYWHITE);
-        DrawLineEx(Vector2{x - 30.0F, floorY - 122.0F},
-                   Vector2{x + 32.0F, floorY - 62.0F}, 4.0F, secondary);
+        DrawLineEx(Vector2{pose.x - 30.0F, pose.floorY - 122.0F},
+                   Vector2{pose.x + 32.0F, pose.floorY - 62.0F}, 4.0F, secondary);
     }
     if (fighter.specialImpactFrames > 0) {
         const MoveDefinition& impactMove = GetMoveDefinition(fighter.specialImpactMove);
@@ -205,18 +305,19 @@ void DrawFighter(const Fighter& fighter) {
         const float levelScale = 1.0F + 0.18F * GetMoveChargeLevel(fighter.specialImpactMove);
         const float impactRadius =
             (24.0F + fighter.specialImpactFrames * 4.0F) * levelScale;
-        DrawCircleLines(static_cast<int>(x), static_cast<int>(floorY - 87.0F),
+        DrawCircleLines(static_cast<int>(pose.x), static_cast<int>(pose.floorY - 87.0F),
                         impactRadius, impactColor);
-        DrawCircleLines(static_cast<int>(x), static_cast<int>(floorY - 87.0F),
+        DrawCircleLines(static_cast<int>(pose.x), static_cast<int>(pose.floorY - 87.0F),
                         impactRadius * 0.65F, RAYWHITE);
     }
     if (fighter.combatState == CombatState::KnockedOut) {
-        DrawCenteredText("KO", static_cast<int>(x), static_cast<int>(floorY - 205.0F),
+        DrawCenteredText("KO", static_cast<int>(pose.x),
+                         static_cast<int>(pose.floorY - 205.0F),
                          30, Color{255, 234, 150, 255});
     }
 }
 
-void DrawSpecialEffects(const GameState& state) {
+void DrawSpecialEffectsBehindFighters(const GameState& state) {
     for (const Fighter& fighter : state.fighters) {
         if (fighter.combatState == CombatState::Attacking &&
             IsChargedMove(fighter.currentMove) &&
@@ -253,7 +354,9 @@ void DrawSpecialEffects(const GameState& state) {
         DrawCircleLines(static_cast<int>(center.x), static_cast<int>(center.y),
                         86.0F + pulse, kEmber);
     }
+}
 
+void DrawProjectiles(const GameState& state) {
     for (const Projectile& projectile : state.projectiles) {
         if (!projectile.active || projectile.sourceMove != MoveId::ThunderBolt) {
             continue;
@@ -477,7 +580,9 @@ void DrawHud(const GameState& state, const char* platformName, int framesPerSeco
 }  // namespace
 
 GameRenderer::GameRenderer()
-    : sceneTarget_(LoadRenderTexture(kLogicalWidth, kLogicalHeight)) {
+    : sceneTarget_(LoadRenderTexture(kLogicalWidth, kLogicalHeight)),
+      voltNeutralTexture_(LoadCharacterTexture(kVoltNeutralTexturePath)),
+      emberNeutralTexture_(LoadCharacterTexture(kEmberNeutralTexturePath)) {
     if (!IsRenderTextureValid(sceneTarget_)) {
         TraceLog(LOG_ERROR, "RENDERER: Logical render texture initialization failed");
         return;
@@ -488,7 +593,15 @@ GameRenderer::GameRenderer()
 }
 
 GameRenderer::~GameRenderer() {
-    UnloadRenderTexture(sceneTarget_);
+    if (IsTextureValid(emberNeutralTexture_)) {
+        UnloadTexture(emberNeutralTexture_);
+    }
+    if (IsTextureValid(voltNeutralTexture_)) {
+        UnloadTexture(voltNeutralTexture_);
+    }
+    if (IsRenderTextureValid(sceneTarget_)) {
+        UnloadRenderTexture(sceneTarget_);
+    }
 }
 
 void GameRenderer::draw(const GameState& state, const char* platformName, int framesPerSecond,
@@ -496,9 +609,18 @@ void GameRenderer::draw(const GameState& state, const char* platformName, int fr
     BeginTextureMode(sceneTarget_);
     ClearBackground(kInk);
     DrawArenaBackdrop(state.simulationFrame);
-    DrawSpecialEffects(state);
-    DrawFighter(state.fighters[0]);
-    DrawFighter(state.fighters[1]);
+    DrawFighterBackdropEffects(state.fighters[0]);
+    DrawFighterBackdropEffects(state.fighters[1]);
+    DrawSpecialEffectsBehindFighters(state);
+    for (const Fighter& fighter : state.fighters) {
+        const bool isVolt = fighter.id == FighterId::Volt;
+        DrawFighterBody(fighter,
+                        isVolt ? voltNeutralTexture_ : emberNeutralTexture_,
+                        isVolt ? kVoltNeutralSprite : kEmberNeutralSprite);
+    }
+    DrawFighterFeedbackEffects(state.fighters[0]);
+    DrawFighterFeedbackEffects(state.fighters[1]);
+    DrawProjectiles(state);
     if (drawDebugHitboxes) {
         DrawDebugBoxes(state);
     }

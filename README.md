@@ -2,7 +2,7 @@
 
 > An original 2D one-on-one fighting game built for responsive local play, portable native builds, and a future rollback-ready online mode.
 
-**Project status:** Phase 1E complete. ARENA CLASH now runs first-to-two local matches with fixed-tick round flow, scoring, reset, victory, and rematch. Phase 1D-C charged attacks are also complete; parent Phase 1D still lacks ultimate abilities. Linux builds/tests and the Chrome/WebAssembly match flow are verified, while the current native runtime could not access X11 display `:0`.
+**Project status:** Phase 2A static character-sprite integration is complete. ARENA CLASH runs first-to-two local matches with fixed-tick round flow, scoring, reset, victory, and rematch. VOLT and EMBER now use original static neutral PNG art while animation remains future work. Parent Phase 1D still lacks ultimate abilities. Linux builds/tests and the Chrome/WebAssembly sprite runtime are verified, while the current native runtime could not access an X11 display.
 
 ## Current implementation
 
@@ -22,7 +22,8 @@
 - Post-contact KO, double-KO, and timeout adjudication with KO precedence on the final timer tick
 - First-to-two scoring, replayed unscored draws, complete round resets, match victory, and `R`/Enter rematch
 - 1280×720 logical render target with aspect-preserving window scaling
-- Primitive-rendered arena and fighters with combat effects, health/energy, timer, round score, countdown/results, match winner/rematch UI, control help, and optional `F1` debug boxes
+- Original static neutral sprites for VOLT and EMBER, with character-calibrated ground pivots, aspect-preserving scale, facing mirroring, and procedural fallback
+- Primitive-rendered arena and combat effects, health/energy, timer, round score, countdown/results, match winner/rematch UI, control help, and optional `F1` debug boxes
 - Headless movement/combat/energy/charge/projectile/match timing, outcome, reset, edge-buffer, lockout, interaction, and same-build replay tests
 - CMake FetchContent dependency on the official raylib 6.2 tag archive, verified by SHA-256
 
@@ -77,7 +78,7 @@ Or use the helper that performs those steps and launches the game:
 ./scripts/run-desktop.sh
 ```
 
-The first configure downloads raylib 6.2. This build path is verified on Ubuntu 22.04 with CMake 3.22.1 and GNU 11.4.0. The current executable compiles, but its runtime could not open the environment's X11 display `:0`; current native controls, visuals, and shutdown remain unverified.
+The first configure downloads raylib 6.2. CMake copies `assets/characters/` beside the native executable so it can find the PNGs when launched from the build directory. This build path is verified on Ubuntu 22.04 with CMake 3.22.1 and GNU 11.4.0. The current executable compiles, but its runtime could not open the environment's X11 display; current native sprite presentation, controls, and shutdown remain unverified.
 
 ## Browser build
 
@@ -87,13 +88,13 @@ Install and activate the [Emscripten SDK](https://emscripten.org/docs/getting_st
 ./scripts/run-web.sh
 ```
 
-The script configures `build/web`, builds `arena-clash.html` plus its JavaScript/Wasm output, and serves it on `127.0.0.1`. By default the OS selects an available port and the script prints the exact URL. Set `PORT` to request a specific port:
+The script configures `build/web`, builds `arena-clash.html` plus its JavaScript/Wasm and preloaded `arena-clash.data` asset package, and serves them on `127.0.0.1`. By default the OS selects an available port and the script prints the exact URL. Set `PORT` to request a specific port:
 
 ```sh
 PORT=8000 ./scripts/run-web.sh
 ```
 
-This path is verified with Emscripten 6.0.12 and automated Google Chrome 153 testing on Linux. The current runtime completed a two-round charged-attack match, displayed countdown/timer, KO/result/score, reset into Round 2, displayed a 2–0 match victory, and accepted `R` for a clean rematch. WebGL reported error state 0; the only HTTP error was the harmless missing favicon request.
+This path is verified with Emscripten 6.0.12 and automated Google Chrome 153 testing on Linux. The current sprite runtime loaded both packaged PNGs and visually exercised grounded placement, transparency, inward mirroring, jumping, charge/block feedback, the HUD, and `F1` hurtboxes. The earlier complete-match runtime check covered countdown/timer, KO/result/score, round reset, match victory, and rematch; those short-lived combat effects were not all recaptured in the Phase 2A run.
 
 ## Core tests
 
@@ -126,7 +127,8 @@ See [Architecture](docs/ARCHITECTURE.md), [Game Design](docs/GAME_DESIGN.md), [D
 | 1D-C | Charged attack resolution | Complete — Linux tests/builds and browser runtime verified |
 | 1D-D | Ultimate abilities | Planned — remaining parent Phase 1D scope |
 | 1E | Complete local matches | Complete — Linux tests/builds and browser runtime verified |
-| 2 | Animations and visual polish | Planned |
+| 2A | Static character-sprite integration | Complete — Linux builds and browser runtime verified |
+| 2 | Animation and remaining visual polish | In progress |
 | 3 | Additional gameplay and AI | Planned |
 | 4 | Online multiplayer | Planned |
 

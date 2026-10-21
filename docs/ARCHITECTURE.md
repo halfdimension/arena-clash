@@ -129,21 +129,23 @@ Each melee activation tracks whether it already connected. A hit or blocked cont
 
 ## Renderer and audio
 
-**Renderer implemented:** `GameRenderer` translates read-only `GameState` into raylib draw calls and owns a 1280×720 render texture. It draws the arena, state-specific combat poses/effects, live health and energy, authoritative timer/round/win pips, intro/result messages, match winner/rematch panel, controls, and optional `F1` box outlines, then scales and letterboxes the result. Core state contains no raylib types, and rendering does not mutate it. Chrome runtime checks visually exercised charged effects and every primary match screen.
+**Renderer implemented:** `GameRenderer` translates read-only `GameState` into raylib draw calls, owns a 1280×720 render texture, and owns one neutral `Texture2D` for each fighter. Sprite definitions currently contain only a texture-space ground pivot and uniform scale. Body selection is fighter-driven, leaving a small seam where later state/clip selection can replace `neutral.png` without entering simulation code. Textures load once after graphics initialization and valid GPU handles unload with the renderer.
+
+Rendering is layered as arena, fighter backdrop effects, large special fields, fighter bodies, fighter feedback, projectiles, optional `F1` boxes, and HUD. This prevents the static sprite replacement from hiding charge, guard, hit/impact, projectile, KO, or debug presentation. If a texture is missing or invalid, only that fighter body returns to the prior procedural renderer. Core state contains no raylib types, and rendering does not mutate it.
 
 **Audio proposed:** No audio resources or presentation layer exist yet. A later audio layer should consume events and own sound/music resources without changing simulation outcomes.
 
-Placeholder primitives precede final assets. Art dimensions do not define gameplay collision geometry.
+The Phase 2A bodies are static neutral sprites, not animation. Art dimensions do not define gameplay collision geometry; the 64×112 simulation body and all combat boxes remain unchanged.
 
 ## Assets
 
-**Proposed:** Assets are grouped by purpose under `assets/characters/`, `assets/arenas/`, and `assets/audio/`. A later manifest may map stable logical identifiers to files. Source/license attribution requirements will be recorded alongside imported content. Generated build copies are ignored; authored source assets remain version-controlled.
+**Partially implemented:** Authored RGBA PNGs live at `assets/characters/<fighter>/neutral.png`. VOLT uses texture pivot `(708, 1209)` at scale `0.27`; EMBER uses `(704, 1221)` at scale `0.26`. These values were calibrated from each illustration's opaque stance and put both planted-foot anchors on the fighter's world position with similar visible heights. Horizontal mirroring also mirrors the pivot coordinate, so changing facing does not translate the feet. A later lightweight manifest or clip definition may extend this metadata for animation. Arena/audio asset loading and explicit source/license metadata remain future work.
 
 ## Native and WebAssembly builds — Implemented and verified on Linux
 
 CMake defines `arena_clash_core`, `ArenaClash`, and `arena_clash_core_tests`. FetchContent downloads the official raylib 6.2 tag archive and verifies its SHA-256. `ARENA_CLASH_BUILD_APPLICATION=OFF` permits headless core tests without configuring raylib.
 
-Native builds use `build/desktop`. Browser builds use the Emscripten toolchain in `build/web`, set raylib's `PLATFORM` to `Web`, emit `arena-clash.html`, and use `web/shell.html`. Keeping these directories separate prevents incompatible toolchain caches and raylib artifacts from being shared.
+Native builds use `build/desktop` and copy the character directory beside `ArenaClash`; the renderer also checks its application directory when the process working directory differs. Browser builds use the Emscripten toolchain in `build/web`, set raylib's `PLATFORM` to `Web`, emit `arena-clash.html`, use `web/shell.html`, and preload `assets/characters/` into the virtual filesystem at the same runtime path. Keeping these directories separate prevents incompatible toolchain caches and raylib artifacts from being shared.
 
 ```mermaid
 flowchart TB

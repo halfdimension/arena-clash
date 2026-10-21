@@ -51,6 +51,14 @@ if(ARENA_CLASH_BUILD_APPLICATION)
     target_link_libraries(ArenaClash PRIVATE arena_clash_core raylib)
     target_include_directories(ArenaClash PRIVATE src)
 
+    set(ARENA_CLASH_CHARACTER_ASSETS
+        "${CMAKE_SOURCE_DIR}/assets/characters/volt/neutral.png"
+        "${CMAKE_SOURCE_DIR}/assets/characters/ember/neutral.png"
+    )
+    set_property(TARGET ArenaClash APPEND PROPERTY LINK_DEPENDS
+        ${ARENA_CLASH_CHARACTER_ASSETS}
+    )
+
     if(MSVC)
         target_compile_options(ArenaClash PRIVATE /W4 /permissive-)
     else()
@@ -67,6 +75,14 @@ if(ARENA_CLASH_BUILD_APPLICATION)
             "SHELL:-s WASM=1"
             "SHELL:-s ASSERTIONS=1"
             "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/web/shell.html"
+            "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/assets/characters@/assets/characters"
+        )
+    else()
+        add_custom_command(TARGET ArenaClash POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${CMAKE_SOURCE_DIR}/assets/characters"
+                    "$<TARGET_FILE_DIR:ArenaClash>/assets/characters"
+            COMMENT "Copying character sprites beside ArenaClash"
         )
     endif()
 endif()

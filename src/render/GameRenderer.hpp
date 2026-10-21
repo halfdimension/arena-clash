@@ -19,6 +19,8 @@ public:
 
 private:
     RenderTexture2D sceneTarget_{};
+    Texture2D voltNeutralTexture_{};
+    Texture2D emberNeutralTexture_{};
 };
 
 }  // namespace arena

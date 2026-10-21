@@ -1,8 +1,8 @@
 # Project Status
 
-**Current phase:** Phase 1E — Complete local matches (complete)
+**Current phase:** Phase 2A — First character sprite integration (complete)
 
-**Phase state:** Phase 1D-C and Phase 1E are complete and verified in automated Linux builds/tests and a Chrome/WebAssembly runtime; parent Phase 1D still lacks ultimates
+**Phase state:** Static neutral sprites are integrated and verified in Linux builds and a Chrome/WebAssembly runtime; full character animation is not implemented, and parent Phase 1D still lacks ultimates
 
 **Last updated:** 2026-10-21
 
@@ -19,12 +19,17 @@ This file is the source of truth for the current verified state. Roadmap and gam
 - A 180-tick result hold freezes combat. The next round resets health, zero-start energy, position, velocity, facing, attack/charge/stun/feedback state, projectiles, and the timer while preserving scores.
 - Match over freezes combat and exposes the winner in simulation state. Buffered `R` or Enter starts a new match and resets scores and all round state without leaking attack edges.
 - The HUD displays authoritative time, round number, win pips, intro countdown, KO/double-KO/time-over and round-winner messages, plus a match-winner/rematch panel.
+- `GameRenderer` loads one RGBA neutral texture for each fighter, draws it from character-specific bottom-center artwork pivots, mirrors it without moving that pivot, and falls back to the procedural body if an asset cannot be loaded.
+- Fighter shadows and large special fields render behind the body; block, charge, attack, hit/impact, projectile, KO, debug, and HUD presentation remain separate from the sprite body. The same static neutral art is intentionally used for every combat state in this prototype.
+- Native builds copy `assets/characters/` beside the executable. Emscripten packages that directory into `arena-clash.data` at `/assets/characters` without embedding image bytes in C++.
 
 ## Verified functionality
 
 - `cmake --build build/tests --parallel` and `ctest --test-dir build/tests --output-on-failure` passed 1 of 1 test executables.
 - `cmake --build build/desktop --parallel` completed the GNU/Linux raylib application, and its CTest run passed 1 of 1 test executables.
 - `cmake --build build/web --parallel` completed with Emscripten 6.0.12, including the shared match simulation and renderer.
+- The generated browser package contains `/assets/characters/volt/neutral.png` and `/assets/characters/ember/neutral.png`; Chrome loaded both textures from it without a fallback warning.
+- Automated Chrome 153 screenshots verified both fighters at their expected starting anchors, undistorted alpha compositing, VOLT facing right, mirrored EMBER facing left, matched visual height and foot alignment, stable sprite/ground alignment during a jump, charging and blocking overlays, unobstructed HUD/control text, and unchanged `F1` hurtboxes.
 - Headless coverage verifies exact timer duration/gating, timeout outcomes, timer clamping, single and simultaneous KO, KO-at-timeout precedence, score-once behavior, draws, both fighters winning, one win each, first-to-two, complete round reset, projectile clearing, stale-edge rejection, frozen match over, restart, and complete-state replay through match over/rematch.
 - An automated Chrome 153/WebAssembly playthrough visually verified Round 1 countdown, the active timer, charged attack effects, KO, VOLT's win pip/result, round reset, Round 2, a 2–0 match victory panel, and `R` rematch to a clean Round 1. WebGL returned error state 0; HTML/JavaScript/Wasm returned HTTP 200/304.
 - Phase 1D-C charged effects were exercised during that browser playthrough, completing their previously missing runtime visual check.
@@ -32,19 +37,21 @@ This file is the source of truth for the current verified state. Roadmap and gam
 
 ## Unavailable verification
 
-- The current native executable could not be runtime-tested because GLFW could not open X11 display `:0`; it exited before window creation. The native build and tests pass, but current native visuals, controls, and shutdown are unverified.
+- The current native executable could not be runtime-tested because no X11 display is available. The native build and tests pass, and its character assets were copied beside the executable, but native sprite presentation, controls, and shutdown are unverified.
 - Windows and macOS builds were not attempted because those platforms/toolchains are unavailable.
 - No human-operated playtest was performed. Physical keyboard rollover/ghosting, non-US punctuation layouts, and controller input remain unverified.
 - Cross-platform or cross-compiler deterministic equivalence was not tested. Replay consistency is same-build only.
+- The Phase 2A Chrome run captured charge and block feedback plus debug boxes, but did not recapture the short attack-active, hit/impact, projectile, or KO effect windows. Their existing draw paths remain separate from and above the new sprite body, and prior milestones exercised them with procedural bodies.
 
 ## Known issues and limitations
 
 - Ultimate abilities remain unimplemented, so parent Phase 1D is still in progress despite Phase 1E being complete.
-- Pause, audio, AI, networking, replay storage, general state serialization, and advanced sprites remain unimplemented.
+- Character animation, pause, audio, AI, networking, replay storage, and general state serialization remain unimplemented.
+- At minimum gameplay-body spacing, the broad neutral illustrations overlap visually because the required 64-unit simulation collision bodies were not changed. State-specific action art should reduce that issue in the animation milestone.
 - The projectile pool has eight fixed slots and does not present a warning if exhausted.
 - If several simultaneous hits apply different stun/knockback values to one defender, stable contact-array order determines the final stun/velocity while all damage still applies.
 - The known missing `favicon.ico` request and headless software-WebGL readback/performance messages do not affect the browser game.
 
 ## Next recommended task
 
-Specify and implement Phase 1D-D ultimate abilities through the existing move/contact pipeline, including per-fighter costs, frame data, collision rules, interruption, presentation, and tests, to close the remaining parent Phase 1D scope before Phase 2 polish.
+Define a minimal Phase 2B state-driven sprite set and clip metadata for idle, walk, jump, block, attack, hit, and KO, keeping frame selection presentation-only and using the validated per-character ground pivots. Phase 1D-D ultimate abilities also remain outstanding gameplay work.

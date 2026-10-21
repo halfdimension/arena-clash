@@ -171,6 +171,8 @@ Pause and audio were not part of the implemented Phase 1E assignment and remain 
 
 ## Phase 2 — Animations and visual polish
 
+**Status:** In progress. Phase 2A static neutral-sprite integration is complete and browser-verified; state-driven animation, arena polish, audio, accessibility, and profiling remain planned.
+
 **Objectives**
 
 - Replace programmer presentation with cohesive character and arena visuals.
@@ -188,6 +190,12 @@ Pause and audio were not part of the implemented Phase 1E assignment and remain 
 - Every combat state has readable player feedback.
 - Assets have documented origin/license information.
 - Frame pacing meets an explicit tested target on claimed platforms.
+
+### Phase 2A — Static character sprites
+
+**Status:** Complete. VOLT and EMBER use original RGBA neutral PNGs with per-character pivots/scales, facing-safe mirroring, procedural fallback, native asset copying, and Emscripten preloading. The browser runtime verified grounded and jumping alignment, transparency, initial facing, charge/block layering, HUD clearance, and `F1` boxes. This milestone does not claim sprite animation or a complete Phase 2 presentation pass.
+
+**Next animation milestone:** Add a minimal presentation-owned clip definition and authored idle, walk, jump, block, attack, hit, and KO frames. Frame selection must observe simulation state without defining attack timing, collision, or movement.
 
 ## Phase 3 — Additional gameplay and AI
 
