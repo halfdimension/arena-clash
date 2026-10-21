@@ -1,5 +1,7 @@
 #pragma once
 
+#include "combat/Combat.hpp"
+
 namespace arena {
 
 enum class FighterId {
@@ -29,6 +31,14 @@ struct Fighter {
     float collisionHeight;
     int health;
     int maximumHealth;
+    CombatState combatState;
+    MoveId currentMove;
+    AttackPhase attackPhase;
+    int combatStateFrame;
+    int hitStunFrames;
+    bool attackHasConnected;
+    int hitFlashFrames;
+    int blockFlashFrames;
 };
 
 }  // namespace arena

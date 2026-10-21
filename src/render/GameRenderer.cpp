@@ -61,11 +61,34 @@ void DrawArenaBackdrop(std::uint64_t simulationFrame) {
 
 void DrawFighter(const Fighter& fighter) {
     const bool isVolt = fighter.id == FighterId::Volt;
-    const Color primary = isVolt ? kVolt : kEmber;
+    Color primary = isVolt ? kVolt : kEmber;
     const Color secondary = isVolt ? kVoltGlow : kEmberGlow;
     const float x = fighter.position.x;
     const float floorY = fighter.position.y - 12.0F;
     const float facing = fighter.facing == FacingDirection::Right ? 1.0F : -1.0F;
+    if (fighter.hitFlashFrames > 0) {
+        primary = RAYWHITE;
+    }
+
+    Vector2 rearHand = {x - facing * 46.0F, floorY - 66.0F};
+    Vector2 frontHand = {x + facing * 48.0F, floorY - 90.0F};
+    if (fighter.combatState == CombatState::Blocking) {
+        rearHand = {x + facing * 39.0F, floorY - 111.0F};
+        frontHand = {x + facing * 44.0F, floorY - 78.0F};
+    } else if (fighter.combatState == CombatState::Attacking) {
+        const bool heavy = fighter.currentMove == MoveId::Heavy;
+        if (fighter.attackPhase == AttackPhase::Startup) {
+            frontHand = {x - facing * (heavy ? 34.0F : 18.0F),
+                         floorY - (heavy ? 124.0F : 108.0F)};
+        } else if (fighter.attackPhase == AttackPhase::Active) {
+            frontHand = {x + facing * (heavy ? 105.0F : 82.0F),
+                         floorY - (heavy ? 75.0F : 98.0F)};
+            rearHand = {x + facing * (heavy ? 61.0F : 26.0F),
+                        floorY - (heavy ? 54.0F : 72.0F)};
+        } else {
+            frontHand = {x + facing * 33.0F, floorY - 61.0F};
+        }
+    }
 
     DrawEllipse(static_cast<int>(x), static_cast<int>(floorY + 22.0F), 72.0F, 15.0F,
                 Color{0, 0, 0, 115});
@@ -77,9 +100,9 @@ void DrawFighter(const Fighter& fighter) {
     DrawLineEx(Vector2{x + 15.0F, floorY - 47.0F}, Vector2{x + 29.0F, floorY + 12.0F},
                17.0F, kInk);
     DrawLineEx(Vector2{x - facing * 12.0F, floorY - 115.0F},
-               Vector2{x - facing * 46.0F, floorY - 66.0F}, 15.0F, kInk);
+               rearHand, 15.0F, kInk);
     DrawLineEx(Vector2{x + facing * 12.0F, floorY - 112.0F},
-               Vector2{x + facing * 48.0F, floorY - 90.0F}, 16.0F, primary);
+               frontHand, fighter.currentMove == MoveId::Heavy ? 20.0F : 16.0F, primary);
 
     DrawRectangleRounded(Rectangle{x - 29.0F, floorY - 128.0F, 58.0F, 88.0F},
                          0.25F, 5, kInk);
@@ -103,6 +126,43 @@ void DrawFighter(const Fighter& fighter) {
                      Vector2{chestX - 15.0F, floorY - 83.0F},
                      Vector2{chestX + 15.0F, floorY - 83.0F}, kEmber);
     }
+
+    if (fighter.combatState == CombatState::Blocking) {
+        DrawCircleLines(static_cast<int>(x + facing * 52.0F),
+                        static_cast<int>(floorY - 93.0F), 42.0F,
+                        fighter.blockFlashFrames > 0 ? RAYWHITE : secondary);
+    }
+    if (fighter.combatState == CombatState::Attacking &&
+        fighter.attackPhase == AttackPhase::Active) {
+        DrawCircleLines(static_cast<int>(frontHand.x), static_cast<int>(frontHand.y),
+                        fighter.currentMove == MoveId::Heavy ? 28.0F : 18.0F, secondary);
+    }
+    if (fighter.hitFlashFrames > 0) {
+        const float effectRadius = 18.0F + static_cast<float>(fighter.hitFlashFrames) * 4.0F;
+        DrawCircleLines(static_cast<int>(x), static_cast<int>(floorY - 92.0F),
+                        effectRadius, RAYWHITE);
+        DrawLineEx(Vector2{x - 30.0F, floorY - 122.0F},
+                   Vector2{x + 32.0F, floorY - 62.0F}, 4.0F, secondary);
+    }
+    if (fighter.combatState == CombatState::KnockedOut) {
+        DrawCenteredText("KO", static_cast<int>(x), static_cast<int>(floorY - 205.0F),
+                         30, Color{255, 234, 150, 255});
+    }
+}
+
+void DrawDebugBoxes(const GameState& state) {
+    for (const Fighter& fighter : state.fighters) {
+        const Rectanglef hurtbox = GetHurtbox(fighter);
+        DrawRectangleLinesEx(Rectangle{hurtbox.x, hurtbox.y, hurtbox.width, hurtbox.height},
+                             2.0F, Color{82, 255, 130, 220});
+        if (fighter.combatState == CombatState::Attacking &&
+            fighter.attackPhase == AttackPhase::Active) {
+            const Rectanglef hitbox =
+                GetAttackHitbox(fighter, GetMoveDefinition(fighter.currentMove));
+            DrawRectangleLinesEx(Rectangle{hitbox.x, hitbox.y, hitbox.width, hitbox.height},
+                                 3.0F, Color{255, 77, 96, 235});
+        }
+    }
 }
 
 void DrawHealthBar(const Fighter& fighter, int x, bool alignRight) {
@@ -121,6 +181,12 @@ void DrawHealthBar(const Fighter& fighter, int x, bool alignRight) {
     DrawRectangle(fillX, 76, fillWidth, kBarHeight - 8, accent);
     DrawRectangleLinesEx(Rectangle{static_cast<float>(x), 72.0F, static_cast<float>(kBarWidth),
                                    static_cast<float>(kBarHeight)}, 2.0F, Color{182, 190, 218, 175});
+
+    char healthText[16];
+    std::snprintf(healthText, sizeof(healthText), "%d / %d", fighter.health,
+                  fighter.maximumHealth);
+    const int textX = alignRight ? x + kBarWidth - MeasureText(healthText, 15) : x;
+    DrawText(healthText, textX, 101, 15, Color{216, 220, 236, 220});
 }
 
 void DrawHud(const GameState& state, const char* platformName, int framesPerSecond) {
@@ -132,16 +198,23 @@ void DrawHud(const GameState& state, const char* platformName, int framesPerSeco
     DrawCenteredText("ROUND 1", 640, 41, 18, Color{222, 213, 240, 255});
     DrawCenteredText("99", 640, 62, 30, RAYWHITE);
 
-    DrawCenteredText("VOLT: A / D MOVE, W JUMP     |     EMBER: ARROWS MOVE / JUMP",
-                     kLogicalWidth / 2, 653, 16, Color{204, 210, 231, 220});
+    DrawCenteredText("VOLT: A/D MOVE  W JUMP  S BLOCK  F LIGHT  G HEAVY",
+                     kLogicalWidth / 2, 646, 15, Color{204, 210, 231, 220});
+    DrawCenteredText("EMBER: ARROWS MOVE/JUMP  DOWN BLOCK  K LIGHT  L HEAVY  |  F1 BOXES",
+                     kLogicalWidth / 2, 664, 14, Color{182, 190, 218, 210});
+
+    if (state.fighters[0].combatState == CombatState::KnockedOut ||
+        state.fighters[1].combatState == CombatState::KnockedOut) {
+        DrawCenteredText("K.O.", kLogicalWidth / 2, 135, 72, Color{255, 232, 145, 245});
+    }
 
     char debugLine[128];
     std::snprintf(debugLine, sizeof(debugLine), "60 Hz SIM  |  TICK %llu  |  %d FPS",
                   static_cast<unsigned long long>(state.simulationFrame), framesPerSecond);
-    DrawText(debugLine, 20, 681, 15, kMist);
+    DrawText(debugLine, 20, 697, 14, kMist);
 
     const int platformWidth = MeasureText(platformName, 15);
-    DrawText(platformName, kLogicalWidth - platformWidth - 20, 681, 15, kMist);
+    DrawText(platformName, kLogicalWidth - platformWidth - 20, 697, 15, kMist);
 }
 
 }  // namespace
@@ -161,12 +234,16 @@ GameRenderer::~GameRenderer() {
     UnloadRenderTexture(sceneTarget_);
 }
 
-void GameRenderer::draw(const GameState& state, const char* platformName, int framesPerSecond) const {
+void GameRenderer::draw(const GameState& state, const char* platformName, int framesPerSecond,
+                        bool drawDebugHitboxes) const {
     BeginTextureMode(sceneTarget_);
     ClearBackground(kInk);
     DrawArenaBackdrop(state.simulationFrame);
     DrawFighter(state.fighters[0]);
     DrawFighter(state.fighters[1]);
+    if (drawDebugHitboxes) {
+        DrawDebugBoxes(state);
+    }
     DrawHud(state, platformName, framesPerSecond);
     EndTextureMode();
 

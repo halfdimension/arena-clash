@@ -73,6 +73,8 @@ The roadmap describes intended scope. A milestone is complete only when its acce
 
 ## Phase 1C — Basic combat and health
 
+**Status:** Complete. Data-backed light/heavy attacks, explicit combat phases, grounded directional guard, rectangle hit/hurt collision, one-hit activation tracking, damage/stun/knockback, health/KO, combat presentation, and regression coverage are implemented. Native Linux and Chrome/WebAssembly combat runtime checks passed; details are recorded in `docs/STATUS.md` and `docs/CHANGELOG.md`.
+
 **Objectives**
 
 - Make light/heavy combat functional and readable.
@@ -82,8 +84,8 @@ The roadmap describes intended scope. A milestone is complete only when its acce
 
 - Fighter combat states and frame-based move data
 - Hitboxes, hurtboxes, collision queries, and one-hit-per-activation tracking
-- Light/heavy attacks, blocking, damage, chip damage, hit-stun, and knockback
-- Health HUD and initial combo tracking
+- Light/heavy attacks, grounded blocking, damage, hit-stun, and knockback
+- Live health HUD, combat feedback, KO indication, and optional debug boxes
 - Headless combat tests for hit, miss, block, trade, and repeated-hit rules
 
 **Acceptance criteria**
@@ -92,6 +94,8 @@ The roadmap describes intended scope. A milestone is complete only when its acce
 - Collision and damage outcomes follow a documented tick order.
 - A hitbox cannot unintentionally damage the same target on consecutive active frames.
 - Automated tests cover representative hit, block, miss, simultaneous-hit, and boundary cases.
+
+Phase 1C deliberately uses no chip damage, block-stun, or combo tracking. Those mechanics require explicit future design and are not completion criteria for this basic combat milestone.
 
 ## Phase 1D — Special and charged attacks
 

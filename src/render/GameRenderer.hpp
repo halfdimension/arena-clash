@@ -14,7 +14,8 @@ public:
     GameRenderer(const GameRenderer&) = delete;
     GameRenderer& operator=(const GameRenderer&) = delete;
 
-    void draw(const GameState& state, const char* platformName, int framesPerSecond) const;
+    void draw(const GameState& state, const char* platformName, int framesPerSecond,
+              bool drawDebugHitboxes) const;
 
 private:
     RenderTexture2D sceneTarget_{};

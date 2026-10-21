@@ -32,10 +32,14 @@ struct ApplicationContext {
     arena::GameRenderer renderer;
     double accumulatorSeconds = 0.0;
     bool firstFramePending = true;
+    bool drawDebugHitboxes = false;
 };
 
 void RunFrame(ApplicationContext& application) {
     application.input.sample();
+    if (application.input.consumeDebugHitboxToggle()) {
+        application.drawDebugHitboxes = !application.drawDebugHitboxes;
+    }
 
     const double frameDeltaSeconds = std::clamp(
         static_cast<double>(GetFrameTime()), 0.0, kMaximumFrameDeltaSeconds);
@@ -47,7 +51,8 @@ void RunFrame(ApplicationContext& application) {
         application.accumulatorSeconds -= arena::kFixedDeltaSeconds;
     }
 
-    application.renderer.draw(application.game.state(), kPlatformName, GetFPS());
+    application.renderer.draw(application.game.state(), kPlatformName, GetFPS(),
+                              application.drawDebugHitboxes);
     if (application.firstFramePending) {
         TraceLog(LOG_INFO, "APPLICATION: First frame rendered successfully");
         application.firstFramePending = false;

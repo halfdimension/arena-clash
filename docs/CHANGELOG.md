@@ -6,6 +6,27 @@ The format is inspired by Keep a Changelog. The project does not yet have a rele
 
 ## Unreleased
 
+### Added — 2026-10-21 (Phase 1C combat)
+
+- Added raylib-independent light/heavy move definitions, rectangle hitbox/hurtbox queries, mirrored attack orientation, and facing-side guard validation.
+- Added 100-HP mutable health; available, attacking/startup-active-recovery, blocking, hit-stun, and KO state; one-hit-per-activation tracking; knockback; wall constraints; and simultaneous candidate-hit collection before mutation.
+- Extended per-player commands and keyboard mapping with buffered light/heavy press edges and held block/attack state for VOLT (`S`/`F`/`G`) and EMBER (Down/`K`/`L`).
+- Added live/numeric health rendering, distinct light/heavy poses, guard and hit feedback, KO labels, updated control help, and an `F1` hurtbox/active-hitbox overlay without moving combat rules into rendering.
+- Expanded the headless suite with exact move timing, unblocked damage, directional guard, recovery/stun/KO lockouts, repeated-hit prevention, horizontal/vertical misses, orientation, trades, wall knockback, health clamping, held-attack behavior, and complete-state same-build replay checks while retaining Phase 1B regressions.
+
+### Fixed — 2026-10-21 (Phase 1C final audit)
+
+- Marked all snapshotted simultaneous attackers as connected before resolving either queued outcome, removing player-order-dependent transient `attackHasConnected` state after a trade.
+
+### Verified — 2026-10-21 (Phase 1C completion)
+
+- Built the native Linux Release application with CMake 3.22.1, GNU 11.4.0, and raylib 6.2; both isolated headless and desktop CTest runs passed 1 of 1 test executables.
+- Launched the X11/OpenGL 4.6 native build, used automated two-player input to produce a simultaneous light trade, visually inspected a captured 94/94 health frame with hit flashes, and closed cleanly through Escape.
+- Linked the browser target with Emscripten 6.0.12 and raylib 6.2, served the generated HTML/JavaScript/Wasm, and exercised it in Chrome 153.
+- Visually inspected captured browser frames for a 94/94 light trade, a successful 100/100 held block with guard feedback, a heavy hit reducing EMBER to 86, and repeated heavy hits reaching 0 HP with KO feedback.
+- Confirmed the browser page loaded, WebGL reported error state 0, and no JavaScript or WebAssembly runtime exception occurred. The only page error was the known harmless missing favicon request.
+- Verified complete fighter-state repeatability for two simulations receiving the same 300-tick movement/combat command stream in the current Linux build; this is not a cross-platform determinism claim.
+
 ### Added — 2026-10-19 (Phase 1B movement)
 
 - Added composed VOLT and EMBER state with platform-neutral position, velocity, movement tuning, grounded/facing state, collision dimensions, identity, and placeholder health.
