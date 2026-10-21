@@ -29,6 +29,7 @@ struct PendingHit {
 
 Fighter MakeFighter(FighterId id, float positionX, float movementSpeed, float jumpVelocity,
                     FacingDirection facing) {
+    const CombatRules& combatRules = GetCombatRules();
     return {
         id,
         {positionX, kArenaGroundY},
@@ -41,11 +42,15 @@ Fighter MakeFighter(FighterId id, float positionX, float movementSpeed, float ju
         kFighterCollisionHeight,
         100,
         100,
+        combatRules.initialEnergy,
+        combatRules.maximumEnergy,
         CombatState::Available,
         MoveId::None,
         AttackPhase::None,
         0,
         0,
+        0,
+        ChargeReleaseOutcome::None,
         false,
         0,
         0,
@@ -84,7 +89,27 @@ void StartAttack(Fighter& fighter, MoveId moveId) {
     }
 }
 
+void StartCharging(Fighter& fighter) {
+    fighter.combatState = CombatState::Charging;
+    fighter.currentMove = MoveId::None;
+    fighter.attackPhase = AttackPhase::None;
+    fighter.combatStateFrame = 0;
+    fighter.chargeFrames = 0;
+    fighter.chargeReleaseOutcome = ChargeReleaseOutcome::None;
+    fighter.attackHasConnected = false;
+    fighter.velocity.x = 0.0F;
+}
+
+void FinishCharging(Fighter& fighter) {
+    const int minimumChargeFrames = GetCombatRules().minimumChargeFrames;
+    fighter.chargeReleaseOutcome = fighter.chargeFrames >= minimumChargeFrames
+                                       ? ChargeReleaseOutcome::Ready
+                                       : ChargeReleaseOutcome::Cancelled;
+    SetAvailable(fighter);
+}
+
 void PrepareCombatState(Fighter& fighter, const FighterCommand& command) {
+    fighter.chargeReleaseOutcome = ChargeReleaseOutcome::None;
     fighter.hitFlashFrames = std::max(0, fighter.hitFlashFrames - 1);
     fighter.blockFlashFrames = std::max(0, fighter.blockFlashFrames - 1);
 
@@ -114,6 +139,13 @@ void PrepareCombatState(Fighter& fighter, const FighterCommand& command) {
         SetAvailable(fighter);
     }
 
+    if (fighter.combatState == CombatState::Charging) {
+        if (command.chargedAttackReleased || !command.chargedAttackHeld) {
+            FinishCharging(fighter);
+        }
+        return;
+    }
+
     if (fighter.combatState != CombatState::Available) {
         return;
     }
@@ -126,6 +158,11 @@ void PrepareCombatState(Fighter& fighter, const FighterCommand& command) {
         StartAttack(fighter, MoveId::Light);
     } else if (command.heavyAttackPressed) {
         StartAttack(fighter, MoveId::Heavy);
+    } else if (command.chargedAttackPressed && fighter.grounded) {
+        StartCharging(fighter);
+        if (command.chargedAttackReleased) {
+            FinishCharging(fighter);
+        }
     }
 }
 
@@ -151,7 +188,8 @@ void AdvanceFighter(Fighter& fighter, const FighterCommand& command) {
             fighter.grounded = false;
         }
     } else if ((fighter.combatState == CombatState::Attacking ||
-                fighter.combatState == CombatState::Blocking) &&
+                fighter.combatState == CombatState::Blocking ||
+                fighter.combatState == CombatState::Charging) &&
                fighter.grounded) {
         fighter.velocity.x = 0.0F;
     }
@@ -260,6 +298,16 @@ void AdvanceCombatFrame(Fighter& fighter) {
         fighter.combatState == CombatState::HitStun) {
         ++fighter.combatStateFrame;
     }
+    if (fighter.combatState == CombatState::Charging) {
+        fighter.chargeFrames =
+            std::min(fighter.chargeFrames + 1, GetCombatRules().maximumChargeFrames);
+    }
+}
+
+int EnergyGainForHit(MoveId moveId) {
+    const CombatRules& combatRules = GetCombatRules();
+    return moveId == MoveId::Heavy ? combatRules.heavyHitEnergyGain
+                                   : combatRules.lightHitEnergyGain;
 }
 
 void ApplyPendingHit(GameState& state, const PendingHit& hit) {
@@ -271,15 +319,22 @@ void ApplyPendingHit(GameState& state, const PendingHit& hit) {
     Fighter& defender = state.fighters[hit.defenderIndex];
 
     if (hit.blocked) {
+        const CombatRules& combatRules = GetCombatRules();
+        GainEnergy(attacker, combatRules.blockedAttackerEnergyGain);
+        GainEnergy(defender, combatRules.blockedDefenderEnergyGain);
         defender.blockFlashFrames = kBlockFlashDuration;
         return;
     }
 
+    GainEnergy(attacker, EnergyGainForHit(hit.move->id));
     defender.health = std::max(0, defender.health - hit.move->damage);
     defender.hitFlashFrames = kHitFlashDuration;
     const float knockbackDirection =
         attacker.position.x <= defender.position.x ? 1.0F : -1.0F;
     defender.velocity.x = hit.move->knockbackStrength * knockbackDirection;
+    if (defender.combatState == CombatState::Charging) {
+        defender.chargeReleaseOutcome = ChargeReleaseOutcome::Interrupted;
+    }
     defender.currentMove = MoveId::None;
     defender.attackPhase = AttackPhase::None;
     defender.attackHasConnected = false;

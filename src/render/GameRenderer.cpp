@@ -75,6 +75,9 @@ void DrawFighter(const Fighter& fighter) {
     if (fighter.combatState == CombatState::Blocking) {
         rearHand = {x + facing * 39.0F, floorY - 111.0F};
         frontHand = {x + facing * 44.0F, floorY - 78.0F};
+    } else if (fighter.combatState == CombatState::Charging) {
+        rearHand = {x - 35.0F, floorY - 73.0F};
+        frontHand = {x + 35.0F, floorY - 73.0F};
     } else if (fighter.combatState == CombatState::Attacking) {
         const bool heavy = fighter.currentMove == MoveId::Heavy;
         if (fighter.attackPhase == AttackPhase::Startup) {
@@ -131,6 +134,15 @@ void DrawFighter(const Fighter& fighter) {
         DrawCircleLines(static_cast<int>(x + facing * 52.0F),
                         static_cast<int>(floorY - 93.0F), 42.0F,
                         fighter.blockFlashFrames > 0 ? RAYWHITE : secondary);
+    }
+    if (fighter.combatState == CombatState::Charging) {
+        const float chargeRatio = static_cast<float>(fighter.chargeFrames) /
+                                  static_cast<float>(GetCombatRules().maximumChargeFrames);
+        DrawCircleLines(static_cast<int>(x), static_cast<int>(floorY - 91.0F),
+                        48.0F + chargeRatio * 28.0F, secondary);
+        DrawCircleLines(static_cast<int>(x), static_cast<int>(floorY - 91.0F),
+                        55.0F + chargeRatio * 36.0F,
+                        Color{secondary.r, secondary.g, secondary.b, 120});
     }
     if (fighter.combatState == CombatState::Attacking &&
         fighter.attackPhase == AttackPhase::Active) {
@@ -189,19 +201,56 @@ void DrawHealthBar(const Fighter& fighter, int x, bool alignRight) {
     DrawText(healthText, textX, 101, 15, Color{216, 220, 236, 220});
 }
 
+void DrawEnergyBar(const Fighter& fighter, int x, bool alignRight) {
+    constexpr int kBarWidth = 438;
+    constexpr int kBarHeight = 14;
+    const float energyRatio = std::clamp(
+        static_cast<float>(fighter.energy) / static_cast<float>(fighter.maximumEnergy),
+        0.0F, 1.0F);
+    const int fillWidth = static_cast<int>((kBarWidth - 6) * energyRatio);
+    const Color accent = fighter.id == FighterId::Volt ? kVoltGlow : kEmberGlow;
+    DrawRectangleRounded(Rectangle{static_cast<float>(x), 122.0F, static_cast<float>(kBarWidth),
+                                   static_cast<float>(kBarHeight)},
+                         0.35F, 5, Color{5, 8, 18, 230});
+    const int fillX = alignRight ? x + kBarWidth - 3 - fillWidth : x + 3;
+    DrawRectangle(fillX, 125, fillWidth, kBarHeight - 6, accent);
+    DrawRectangleLinesEx(Rectangle{static_cast<float>(x), 122.0F,
+                                   static_cast<float>(kBarWidth),
+                                   static_cast<float>(kBarHeight)},
+                         1.0F, Color{182, 190, 218, 150});
+
+    char energyText[24];
+    std::snprintf(energyText, sizeof(energyText), "ENERGY %d / %d", fighter.energy,
+                  fighter.maximumEnergy);
+    const int textX = alignRight ? x + kBarWidth - MeasureText(energyText, 14) : x;
+    DrawText(energyText, textX, 141, 14, Color{216, 220, 236, 220});
+
+    if (fighter.combatState == CombatState::Charging) {
+        const int chargePercent = fighter.chargeFrames * 100 /
+                                  GetCombatRules().maximumChargeFrames;
+        char chargeText[24];
+        std::snprintf(chargeText, sizeof(chargeText), "CHARGING %d%%", chargePercent);
+        const int chargeX = alignRight ? x + kBarWidth - MeasureText(chargeText, 16) : x;
+        DrawText(chargeText, chargeX, 160, 16, accent);
+    }
+}
+
 void DrawHud(const GameState& state, const char* platformName, int framesPerSecond) {
     DrawHealthBar(state.fighters[0], 64, false);
     DrawHealthBar(state.fighters[1], 778, true);
+    DrawEnergyBar(state.fighters[0], 64, false);
+    DrawEnergyBar(state.fighters[1], 778, true);
 
     DrawCircle(640, 69, 46.0F, Color{8, 10, 22, 245});
     DrawCircleLines(640, 69, 46.0F, Color{185, 151, 236, 190});
     DrawCenteredText("ROUND 1", 640, 41, 18, Color{222, 213, 240, 255});
     DrawCenteredText("99", 640, 62, 30, RAYWHITE);
 
-    DrawCenteredText("VOLT: A/D MOVE  W JUMP  S BLOCK  F LIGHT  G HEAVY",
-                     kLogicalWidth / 2, 646, 15, Color{204, 210, 231, 220});
-    DrawCenteredText("EMBER: ARROWS MOVE/JUMP  DOWN BLOCK  K LIGHT  L HEAVY  |  F1 BOXES",
-                     kLogicalWidth / 2, 664, 14, Color{182, 190, 218, 210});
+    DrawCenteredText("VOLT: A/D MOVE  W JUMP  S BLOCK  F LIGHT  G HEAVY  H SPECIAL  J CHARGE",
+                     kLogicalWidth / 2, 646, 14, Color{204, 210, 231, 220});
+    DrawCenteredText(
+        "EMBER: ARROWS MOVE/JUMP  DOWN BLOCK  K LIGHT  L HEAVY  ; SPECIAL  ' CHARGE  |  F1 BOXES",
+        kLogicalWidth / 2, 664, 13, Color{182, 190, 218, 210});
 
     if (state.fighters[0].combatState == CombatState::KnockedOut ||
         state.fighters[1].combatState == CombatState::KnockedOut) {

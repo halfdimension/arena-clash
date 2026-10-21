@@ -14,8 +14,16 @@ enum class CombatState {
     Available,
     Attacking,
     Blocking,
+    Charging,
     HitStun,
     KnockedOut,
+};
+
+enum class ChargeReleaseOutcome {
+    None,
+    Cancelled,
+    Ready,
+    Interrupted,
 };
 
 enum class AttackPhase {
@@ -50,7 +58,23 @@ struct MoveDefinition {
     float knockbackStrength;
 };
 
+struct CombatRules {
+    int maximumEnergy;
+    int initialEnergy;
+    int lightHitEnergyGain;
+    int heavyHitEnergyGain;
+    int blockedAttackerEnergyGain;
+    int blockedDefenderEnergyGain;
+    int specialEnergyCost;
+    int minimumChargeFrames;
+    int maximumChargeFrames;
+};
+
 const MoveDefinition& GetMoveDefinition(MoveId moveId);
+const CombatRules& GetCombatRules();
+void GainEnergy(Fighter& fighter, int amount);
+bool CanActivateSpecial(const Fighter& fighter);
+bool SpendEnergyForSpecial(Fighter& fighter);
 Rectanglef GetHurtbox(const Fighter& fighter);
 Rectanglef GetAttackHitbox(const Fighter& fighter, const MoveDefinition& move);
 bool RectanglesOverlap(const Rectanglef& first, const Rectanglef& second);

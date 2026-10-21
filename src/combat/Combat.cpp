@@ -2,6 +2,7 @@
 
 #include "game/Fighter.hpp"
 
+#include <algorithm>
 #include <cassert>
 
 namespace arena {
@@ -29,11 +30,47 @@ constexpr MoveDefinition kHeavyMove = {
     480.0F,
 };
 
+constexpr CombatRules kCombatRules = {
+    100,
+    0,
+    8,
+    12,
+    4,
+    6,
+    25,
+    18,
+    72,
+};
+
 }  // namespace
 
 const MoveDefinition& GetMoveDefinition(MoveId moveId) {
     assert(moveId != MoveId::None);
     return moveId == MoveId::Heavy ? kHeavyMove : kLightMove;
+}
+
+const CombatRules& GetCombatRules() {
+    return kCombatRules;
+}
+
+void GainEnergy(Fighter& fighter, int amount) {
+    if (amount <= 0) {
+        return;
+    }
+    fighter.energy = std::clamp(fighter.energy + amount, 0, fighter.maximumEnergy);
+}
+
+bool CanActivateSpecial(const Fighter& fighter) {
+    return fighter.combatState == CombatState::Available &&
+           fighter.energy >= kCombatRules.specialEnergyCost;
+}
+
+bool SpendEnergyForSpecial(Fighter& fighter) {
+    if (!CanActivateSpecial(fighter)) {
+        return false;
+    }
+    fighter.energy -= kCombatRules.specialEnergyCost;
+    return true;
 }
 
 Rectanglef GetHurtbox(const Fighter& fighter) {

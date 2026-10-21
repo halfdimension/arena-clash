@@ -6,6 +6,25 @@ The format is inspired by Keep a Changelog. The project does not yet have a rele
 
 ## Unreleased
 
+### Added — 2026-10-21 (Phase 1D-A energy and charge foundation)
+
+- Added centralized 0–100 energy rules: light hits award 8, heavy hits award 12, and blocked attacks award 4 to the attacker plus 6 to the defender, with once-per-activation awards and clamping.
+- Added 25-energy future-special affordability/atomic spending helpers without adding or activating character specials.
+- Added platform-neutral special and charged-attack held/pressed/released commands plus a raylib-free buffer that preserves edges until one fixed tick and prevents repeats during catch-up ticks.
+- Mapped VOLT special/charge to `H`/`J` and EMBER special/charge to semicolon/apostrophe.
+- Added a grounded `Charging` state with exact 18-tick minimum, 72-tick cap, early-release cancellation, ready release, valid-hit interruption, action lockouts, and one-tick release outcomes. No charged damage or hitbox was added.
+- Added energy bars, numeric energy, charging pose/aura, percentage feedback, and updated control help through read-only rendering.
+- Expanded headless regression coverage for energy outcomes/clamping/spending, buffered input edges, charge thresholds/cap/interruption/lockouts, and full-state same-build replay consistency while retaining all Phase 1A–1C cases.
+
+### Verified — 2026-10-21 (Phase 1D-A completion)
+
+- Built the isolated and desktop Linux Release targets; both CTest runs passed 1 of 1 test executables.
+- Launched the native X11/OpenGL 4.6 application and confirmed successful window, renderer, and first-frame initialization; this automated check timed out after five seconds and did not exercise native controls or normal shutdown.
+- Linked the Emscripten 6.0.12/raylib 6.2 browser output and exercised it in Chrome 153 with automated DevTools input.
+- Visually inspected browser captures showing both fighters' energy HUD, VOLT `J` charge, EMBER apostrophe/DOM `Quote` charge, live charge percentages/cap, and a successful light hit producing 8 energy and 94 defender health.
+- Confirmed WebGL error state 0 and no JavaScript or WebAssembly exception. The only network error remained the harmless missing favicon; headless screenshot/readback warnings were also recorded.
+- Inspected raylib 6.2's Emscripten backend to confirm DOM `Semicolon` and `Quote` mappings plus key-down/key-up canvas callbacks. Physical keyboard rollover and non-US punctuation layouts remain unverified.
+
 ### Added — 2026-10-21 (Phase 1C combat)
 
 - Added raylib-independent light/heavy move definitions, rectangle hitbox/hurtbox queries, mirrored attack orientation, and facing-side guard validation.

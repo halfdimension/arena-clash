@@ -1,6 +1,6 @@
 #pragma once
 
-#include "input/FrameCommands.hpp"
+#include "input/FrameCommandBuffer.hpp"
 
 namespace arena {
 
@@ -11,7 +11,7 @@ public:
     bool consumeDebugHitboxToggle();
 
 private:
-    FrameCommands pendingCommands_{};
+    FrameCommandBuffer commandBuffer_{};
     bool debugHitboxTogglePending_ = false;
 };
 

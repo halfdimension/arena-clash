@@ -15,6 +15,7 @@ option(ARENA_CLASH_BUILD_APPLICATION "Build the raylib application" ON)
 add_library(arena_clash_core STATIC
     src/combat/Combat.cpp
     src/core/Game.cpp
+    src/input/FrameCommandBuffer.cpp
 )
 target_include_directories(arena_clash_core PUBLIC src)
 target_compile_features(arena_clash_core PUBLIC cxx_std_17)

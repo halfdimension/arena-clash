@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 1C movement and basic light/heavy combat are implemented and verified. Values labeled **implemented** below are simulation truth; specials, energy, charged attacks, combos, audio, and round flow remain **planned/provisional** and require later implementation and playtesting.
+Phase 1D-A energy and charge-state foundations are implemented and verified alongside Phase 1C movement and normal combat. Values labeled **implemented** below are simulation truth; actual special/charged attacks, projectiles, ultimates, combos, audio, and round flow remain **planned/provisional** and require later implementation and playtesting.
 
 ## Match concept
 
@@ -41,17 +41,18 @@ Planned signature moves:
 | Block | **Implemented:** hold the dedicated guard button while grounded; blocks Phase 1C normals from the facing side with no chip/block-stun |
 | Light attack | **Implemented:** fast 6-damage normal with short reach and recovery |
 | Heavy attack | **Implemented:** slower 14-damage normal with greater reach, stun, and knockback |
-| Special attack | **Planned Phase 1D:** character-specific action that spends special energy |
-| Charged attack | **Planned Phase 1D:** hold heavy to increase power, then release |
-| Ultimate | **Planned Phase 1D:** high-cost character-specific attack |
+| Special attack | **Foundation implemented:** dedicated command and 25-energy affordability/spending rule exist; no move activates yet |
+| Charged attack | **Foundation implemented:** dedicated hold/release command drives charge timing/outcomes; no hitbox or damage exists yet |
+| Ultimate | **Planned Phase 1D-B:** high-cost character-specific attack |
 
 Crouching attacks, throws, dashes, air specials, and cancels are not part of Phase 1C.
 
 ## Combat states and transitions — Implemented
 
-- `Available`: may move, jump, start an attack, or enter grounded block.
+- `Available`: may move, jump, start a normal attack or charge, or enter grounded block.
 - `Attacking`: owns `Startup`, `Active`, or `Recovery`; it cannot start another action. Grounded attacks stop horizontal movement, while airborne attacks retain existing momentum.
 - `Blocking`: requires the held guard command and grounded state. Block wins over an attack pressed on the same tick and exits when released.
+- `Charging`: grounded fixed-tick hold state; stops movement and rejects jump, block entry, normal attacks, and special activation until release/interruption.
 - `HitStun`: rejects movement/attacks while the configured stun ticks and knockback are processed.
 - `KnockedOut`: entered at 0 HP and cannot initiate actions; round-over handling is deferred.
 
@@ -105,13 +106,25 @@ Left and right together cancel. Jump begins only from a just-pressed command whi
 | Block | `S` | Down arrow |
 | Light attack | `F` | `K` |
 | Heavy attack | `G` | `L` |
+| Special command (no move yet) | `H` | Semicolon (`;`) |
+| Charge hold/release | `J` | Apostrophe (`'`) |
 | Debug hurtboxes/hitboxes | `F1` | `F1` |
 
-Both players may act simultaneously. Jump and attack presses are buffered until one simulation tick and consumed once; held attack buttons do not repeat a move without a new press. Physical keyboard ghosting still depends on hardware. Remapping and controllers remain future work.
+Both players may act simultaneously. Press/release edges are buffered until one simulation tick and consumed once; held values remain available for catch-up ticks. Held normal-attack buttons do not repeat a move without a new press. Browser input uses raylib's physical DOM-code mapping for semicolon/quote. Physical keyboard ghosting, rollover, and non-US punctuation layouts still depend on hardware/browser. Remapping and controllers remain future work.
 
-## Special energy and charged attacks — Planned Phase 1D
+## Special energy and charge foundation — Implemented Phase 1D-A
 
-The earlier provisional concepts of a 0–100 energy meter, energy awards, specials, ultimates, and three charged-heavy levels are not implemented. Phase 1D must define and test their exact costs, thresholds, interruption behavior, and move data before those rules become current design.
+- Each fighter starts at **0 energy** with a **100-energy maximum**.
+- A successful light hit grants **8** energy to its attacker; a successful heavy grants **12**.
+- A blocked normal grants **4** to the attacker and **6** to the defender.
+- Each connected activation awards only once, including blocks; gains clamp to 100.
+- The reserved special cost is **25**. A future special may spend only while the fighter is `Available` and has at least 25; a refused spend leaves energy unchanged. Phase 1D-A special commands do not invoke spending because no actual move exists.
+- Charge time is measured only in fixed simulation ticks. The accepted press tick is charge frame 1, minimum readiness is **18 ticks**, and duration caps at **72 ticks**.
+- Releasing at 0–17 ticks cancels; releasing at 18–72 produces a one-tick `Ready` outcome for future charged-move activation.
+- A valid unblocked hit interrupts a fighter who is still charging. A release is processed during command validation, so a release on the impact tick resolves before that tick's later collision snapshot.
+- Block retains priority over normal/charge buttons, and existing light-before-heavy behavior is preserved. Normal attacks are checked before charge on the same tick; while charging, movement, jump, new block, normal attacks, and future specials are locked out.
+
+Phase 1D-A has no charged attack damage, hitbox, startup/active/recovery phases, levels, or release animation. Character-specific special attacks, projectiles, ultimates, and final charged-attack behavior belong to Phase 1D-B.
 
 ## Rounds and win conditions — Planned Phase 1E
 

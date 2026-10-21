@@ -14,6 +14,12 @@ struct FighterCommand {
     bool lightAttackPressed = false;
     bool heavyAttackHeld = false;
     bool heavyAttackPressed = false;
+    bool specialAttackHeld = false;
+    bool specialAttackPressed = false;
+    bool specialAttackReleased = false;
+    bool chargedAttackHeld = false;
+    bool chargedAttackPressed = false;
+    bool chargedAttackReleased = false;
 };
 
 struct FrameCommands {

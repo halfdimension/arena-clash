@@ -1,5 +1,6 @@
 #include "combat/Combat.hpp"
 #include "core/Game.hpp"
+#include "input/FrameCommandBuffer.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -75,6 +76,7 @@ bool TestInitialStateAndMoveData() {
     game.initialize();
     const arena::MoveDefinition& light = arena::GetMoveDefinition(arena::MoveId::Light);
     const arena::MoveDefinition& heavy = arena::GetMoveDefinition(arena::MoveId::Heavy);
+    const arena::CombatRules& combatRules = arena::GetCombatRules();
 
     bool passed = true;
     passed &= Expect(game.state().simulationFrame == 0, "initial frame is zero");
@@ -87,6 +89,9 @@ bool TestInitialStateAndMoveData() {
                      "Ember initially faces Volt");
     passed &= Expect(Volt(game).health == 100 && Ember(game).health == 100,
                      "fighters start at 100 health");
+    passed &= Expect(Volt(game).energy == 0 && Ember(game).energy == 0 &&
+                         Volt(game).maximumEnergy == 100 && Ember(game).maximumEnergy == 100,
+                     "fighters start with empty 100-point energy meters");
     passed &= Expect(Volt(game).combatState == arena::CombatState::Available &&
                          Ember(game).combatState == arena::CombatState::Available,
                      "fighters start combat-available");
@@ -96,6 +101,14 @@ bool TestInitialStateAndMoveData() {
     passed &= Expect(heavy.damage == 14 && heavy.startupFrames == 12 &&
                          heavy.activeFrames == 4 && heavy.recoveryFrames == 17,
                      "heavy move data matches Phase 1C values");
+    passed &= Expect(combatRules.lightHitEnergyGain == 8 &&
+                         combatRules.heavyHitEnergyGain == 12 &&
+                         combatRules.blockedAttackerEnergyGain == 4 &&
+                         combatRules.blockedDefenderEnergyGain == 6 &&
+                         combatRules.specialEnergyCost == 25 &&
+                         combatRules.minimumChargeFrames == 18 &&
+                         combatRules.maximumChargeFrames == 72,
+                     "energy and charge tuning is centralized");
     return passed;
 }
 
@@ -294,6 +307,8 @@ bool TestDamageOneHitAndHitStunLockout() {
     bool passed = true;
     passed &= Expect(Ember(game).health == 94, "light attack deals six damage");
     passed &= Expect(Volt(game).health == 100, "attack does not damage its owner");
+    passed &= Expect(Volt(game).energy == 8 && Ember(game).energy == 0,
+                     "successful light hit awards attacker energy");
     passed &= Expect(Ember(game).combatState == arena::CombatState::HitStun &&
                          Ember(game).hitStunFrames == 12,
                      "unblocked light hit applies configured hit-stun");
@@ -307,9 +322,12 @@ bool TestDamageOneHitAndHitStunLockout() {
                      "fighter cannot attack during hit-stun");
 
     const int healthAfterFirstActiveFrame = Ember(game).health;
+    const int energyAfterFirstActiveFrame = Volt(game).energy;
     AdvanceEmpty(game, 4);
     passed &= Expect(Ember(game).health == healthAfterFirstActiveFrame,
                      "one activation cannot hit again on later active frames");
+    passed &= Expect(Volt(game).energy == energyAfterFirstActiveFrame,
+                     "one activation cannot award energy again on later active frames");
     return passed;
 }
 
@@ -324,6 +342,8 @@ bool TestBlocking() {
     passed &= Expect(Ember(game).combatState == arena::CombatState::Blocking,
                      "held block remains active after guarding");
     passed &= Expect(Ember(game).blockFlashFrames > 0, "blocked hit emits block feedback");
+    passed &= Expect(Volt(game).energy == 4 && Ember(game).energy == 6,
+                     "blocked attack awards both attacker and defender energy once");
 
     arena::FrameCommands blockAndAttack;
     blockAndAttack.fighters[1].blockHeld = true;
@@ -332,6 +352,9 @@ bool TestBlocking() {
     passed &= Expect(Ember(game).combatState == arena::CombatState::Blocking &&
                          Ember(game).currentMove == arena::MoveId::None,
                      "blocking cannot attack simultaneously");
+    AdvanceEmpty(game, 4);
+    passed &= Expect(Volt(game).energy == 4 && Ember(game).energy == 6,
+                     "blocked activation cannot award repeated energy");
     return passed;
 }
 
@@ -422,6 +445,8 @@ bool TestSimultaneousTrade() {
     bool passed = true;
     passed &= Expect(Volt(game).health == 94 && Ember(game).health == 94,
                      "same-tick valid attacks both deal damage");
+    passed &= Expect(Volt(game).energy == 8 && Ember(game).energy == 8,
+                     "same-tick trade awards both attackers without order bias");
     passed &= Expect(Volt(game).combatState == arena::CombatState::HitStun &&
                          Ember(game).combatState == arena::CombatState::HitStun,
                      "both fighters enter hit-stun after a trade");
@@ -474,6 +499,207 @@ bool TestHeldAttackDoesNotRepeat() {
                   "held attack without a new press does not restart");
 }
 
+bool TestEnergyRulesAndSpecialFoundation() {
+    arena::Game game;
+    game.initialize();
+    ApproachToBodyContact(game);
+    AdvanceToFirstActiveFrame(game, 0, arena::MoveId::Heavy);
+
+    bool passed = true;
+    passed &= Expect(Volt(game).energy == 12,
+                     "successful heavy hit awards twelve attacker energy");
+
+    arena::Fighter fighter = Volt(game);
+    fighter.combatState = arena::CombatState::Available;
+    arena::GainEnergy(fighter, 500);
+    passed &= Expect(fighter.energy == fighter.maximumEnergy,
+                     "energy gain clamps at maximum energy");
+    arena::GainEnergy(fighter, -20);
+    passed &= Expect(fighter.energy == fighter.maximumEnergy,
+                     "negative energy awards cannot reduce energy");
+    passed &= Expect(arena::SpendEnergyForSpecial(fighter) && fighter.energy == 75,
+                     "future special spending atomically deducts the configured cost");
+
+    arena::Fighter emptyFighter = Ember(game);
+    emptyFighter.combatState = arena::CombatState::Available;
+    emptyFighter.energy = 0;
+    passed &= Expect(!arena::CanActivateSpecial(emptyFighter) &&
+                         !arena::SpendEnergyForSpecial(emptyFighter) &&
+                         emptyFighter.energy == 0,
+                     "insufficient energy rejects future special activation without underflow");
+    emptyFighter.energy = arena::GetCombatRules().specialEnergyCost;
+    emptyFighter.combatState = arena::CombatState::Charging;
+    passed &= Expect(!arena::CanActivateSpecial(emptyFighter),
+                     "future special activation is locked out while charging");
+    return passed;
+}
+
+bool TestFrameCommandEdgeBuffer() {
+    arena::FrameCommandBuffer buffer;
+    arena::FrameCommands pressed;
+    pressed.fighters[0].specialAttackHeld = true;
+    pressed.fighters[0].specialAttackPressed = true;
+    pressed.fighters[1].chargedAttackHeld = true;
+    pressed.fighters[1].chargedAttackPressed = true;
+    buffer.sample(pressed);
+
+    arena::FrameCommands released;
+    released.fighters[0].specialAttackReleased = true;
+    released.fighters[1].chargedAttackReleased = true;
+    buffer.sample(released);
+
+    const arena::FrameCommands firstTick = buffer.consumeForSimulationTick();
+    const arena::FrameCommands catchUpTick = buffer.consumeForSimulationTick();
+    bool passed = true;
+    passed &= Expect(firstTick.fighters[0].specialAttackPressed &&
+                         firstTick.fighters[0].specialAttackReleased &&
+                         !firstTick.fighters[0].specialAttackHeld,
+                     "special press and release survive render frames until a simulation tick");
+    passed &= Expect(firstTick.fighters[1].chargedAttackPressed &&
+                         firstTick.fighters[1].chargedAttackReleased &&
+                         !firstTick.fighters[1].chargedAttackHeld,
+                     "charge press and release survive render frames until a simulation tick");
+    passed &= Expect(!catchUpTick.fighters[0].specialAttackPressed &&
+                         !catchUpTick.fighters[0].specialAttackReleased &&
+                         !catchUpTick.fighters[1].chargedAttackPressed &&
+                         !catchUpTick.fighters[1].chargedAttackReleased,
+                     "one-shot edges are not repeated on a catch-up tick");
+
+    arena::Game edgeGame;
+    edgeGame.initialize();
+    edgeGame.advanceSimulation(firstTick);
+    passed &= Expect(Volt(edgeGame).energy == 0 &&
+                         Volt(edgeGame).combatState == arena::CombatState::Available,
+                     "insufficient-energy special input cannot spend or start a move");
+    passed &= Expect(Ember(edgeGame).chargeReleaseOutcome ==
+                         arena::ChargeReleaseOutcome::Cancelled,
+                     "a buffered charge release is not lost when press and release share a tick");
+
+    arena::FrameCommands held;
+    held.fighters[0].chargedAttackHeld = true;
+    buffer.sample(held);
+    const arena::FrameCommands heldTick = buffer.consumeForSimulationTick();
+    const arena::FrameCommands secondHeldTick = buffer.consumeForSimulationTick();
+    passed &= Expect(heldTick.fighters[0].chargedAttackHeld &&
+                         secondHeldTick.fighters[0].chargedAttackHeld,
+                     "held input remains available to every catch-up tick");
+    return passed;
+}
+
+void BeginCharge(arena::Game& game, std::size_t fighterIndex) {
+    arena::FrameCommands commands;
+    commands.fighters[fighterIndex].chargedAttackHeld = true;
+    commands.fighters[fighterIndex].chargedAttackPressed = true;
+    game.advanceSimulation(commands);
+}
+
+void HoldCharge(arena::Game& game, std::size_t fighterIndex, int tickCount) {
+    arena::FrameCommands commands;
+    commands.fighters[fighterIndex].chargedAttackHeld = true;
+    for (int tick = 0; tick < tickCount; ++tick) {
+        game.advanceSimulation(commands);
+    }
+}
+
+void ReleaseCharge(arena::Game& game, std::size_t fighterIndex) {
+    arena::FrameCommands commands;
+    commands.fighters[fighterIndex].chargedAttackReleased = true;
+    game.advanceSimulation(commands);
+}
+
+bool TestChargeThresholdsAndMaximum() {
+    const arena::CombatRules& rules = arena::GetCombatRules();
+    arena::Game earlyRelease;
+    earlyRelease.initialize();
+    BeginCharge(earlyRelease, 0);
+    HoldCharge(earlyRelease, 0, rules.minimumChargeFrames - 2);
+
+    bool passed = true;
+    passed &= Expect(Volt(earlyRelease).chargeFrames == rules.minimumChargeFrames - 1,
+                     "charge timer counts the accepted press tick as frame one");
+    ReleaseCharge(earlyRelease, 0);
+    passed &= Expect(Volt(earlyRelease).combatState == arena::CombatState::Available &&
+                         Volt(earlyRelease).chargeReleaseOutcome ==
+                             arena::ChargeReleaseOutcome::Cancelled,
+                     "release one tick before minimum charge cancels");
+
+    arena::Game exactRelease;
+    exactRelease.initialize();
+    BeginCharge(exactRelease, 0);
+    HoldCharge(exactRelease, 0, rules.minimumChargeFrames - 1);
+    passed &= Expect(Volt(exactRelease).chargeFrames == rules.minimumChargeFrames,
+                     "minimum charge threshold occurs on the exact configured tick");
+    ReleaseCharge(exactRelease, 0);
+    passed &= Expect(Volt(exactRelease).combatState == arena::CombatState::Available &&
+                         Volt(exactRelease).chargeReleaseOutcome ==
+                             arena::ChargeReleaseOutcome::Ready,
+                     "release at minimum charge reports a ready charged attack");
+    exactRelease.advanceSimulation({});
+    passed &= Expect(Volt(exactRelease).chargeReleaseOutcome ==
+                         arena::ChargeReleaseOutcome::None,
+                     "charge release outcome lasts one simulation tick");
+
+    arena::Game maximumCharge;
+    maximumCharge.initialize();
+    BeginCharge(maximumCharge, 0);
+    HoldCharge(maximumCharge, 0, rules.maximumChargeFrames + 20);
+    passed &= Expect(Volt(maximumCharge).combatState == arena::CombatState::Charging &&
+                         Volt(maximumCharge).chargeFrames == rules.maximumChargeFrames,
+                     "charge duration remains capped while the button stays held");
+    return passed;
+}
+
+bool TestChargeInterruptionAndCombatLockouts() {
+    arena::Game lockoutGame;
+    lockoutGame.initialize();
+    arena::FrameCommands competingCommands;
+    competingCommands.fighters[0].lightAttackPressed = true;
+    competingCommands.fighters[0].chargedAttackPressed = true;
+    competingCommands.fighters[0].chargedAttackHeld = true;
+    lockoutGame.advanceSimulation(competingCommands);
+
+    bool passed = true;
+    passed &= Expect(Volt(lockoutGame).combatState == arena::CombatState::Attacking &&
+                         Volt(lockoutGame).currentMove == arena::MoveId::Light,
+                     "existing normal-attack priority wins over charge on the same tick");
+
+    arena::Game chargingGame;
+    chargingGame.initialize();
+    BeginCharge(chargingGame, 0);
+    const float initialX = Volt(chargingGame).position.x;
+    arena::FrameCommands rejectedActions;
+    rejectedActions.fighters[0].chargedAttackHeld = true;
+    rejectedActions.fighters[0].moveRightHeld = true;
+    rejectedActions.fighters[0].heavyAttackPressed = true;
+    rejectedActions.fighters[0].jumpPressed = true;
+    chargingGame.advanceSimulation(rejectedActions);
+    passed &= Expect(Volt(chargingGame).combatState == arena::CombatState::Charging &&
+                         Volt(chargingGame).currentMove == arena::MoveId::None &&
+                         NearlyEqual(Volt(chargingGame).position.x, initialX) &&
+                         Volt(chargingGame).grounded,
+                     "charging locks out movement, jump, and normal attacks");
+
+    arena::Game interruptedGame;
+    interruptedGame.initialize();
+    ApproachToBodyContact(interruptedGame);
+    arena::FrameCommands start;
+    start.fighters[0].lightAttackPressed = true;
+    start.fighters[1].chargedAttackPressed = true;
+    start.fighters[1].chargedAttackHeld = true;
+    interruptedGame.advanceSimulation(start);
+    arena::FrameCommands hold;
+    hold.fighters[1].chargedAttackHeld = true;
+    for (int tick = 0; tick < arena::GetMoveDefinition(arena::MoveId::Light).startupFrames;
+         ++tick) {
+        interruptedGame.advanceSimulation(hold);
+    }
+    passed &= Expect(Ember(interruptedGame).combatState == arena::CombatState::HitStun &&
+                         Ember(interruptedGame).chargeReleaseOutcome ==
+                             arena::ChargeReleaseOutcome::Interrupted,
+                     "a valid unblocked hit interrupts charging");
+    return passed;
+}
+
 bool TestHealthClampKoAndKoLockout() {
     arena::Game game;
     game.initialize();
@@ -509,11 +735,14 @@ bool FightersEqual(const arena::Fighter& first, const arena::Fighter& second) {
            first.jumpVelocity == second.jumpVelocity && first.grounded == second.grounded &&
            first.facing == second.facing && first.collisionWidth == second.collisionWidth &&
            first.collisionHeight == second.collisionHeight && first.health == second.health &&
-           first.maximumHealth == second.maximumHealth &&
+           first.maximumHealth == second.maximumHealth && first.energy == second.energy &&
+           first.maximumEnergy == second.maximumEnergy &&
            first.combatState == second.combatState && first.currentMove == second.currentMove &&
            first.attackPhase == second.attackPhase &&
            first.combatStateFrame == second.combatStateFrame &&
            first.hitStunFrames == second.hitStunFrames &&
+           first.chargeFrames == second.chargeFrames &&
+           first.chargeReleaseOutcome == second.chargeReleaseOutcome &&
            first.attackHasConnected == second.attackHasConnected &&
            first.hitFlashFrames == second.hitFlashFrames &&
            first.blockFlashFrames == second.blockFlashFrames;
@@ -540,6 +769,12 @@ bool TestFixedTickReplayConsistency() {
         commands.fighters[1].heavyAttackPressed = tick == 135;
         commands.fighters[1].heavyAttackHeld = tick >= 135 && tick < 150;
         commands.fighters[1].blockHeld = tick >= 215 && tick < 240;
+        commands.fighters[0].chargedAttackPressed = tick == 250;
+        commands.fighters[0].chargedAttackHeld = tick >= 250 && tick < 270;
+        commands.fighters[0].chargedAttackReleased = tick == 270;
+        commands.fighters[1].specialAttackPressed = tick == 280;
+        commands.fighters[1].specialAttackHeld = tick >= 280 && tick < 283;
+        commands.fighters[1].specialAttackReleased = tick == 283;
 
         first.advanceSimulation(commands);
         second.advanceSimulation(commands);
@@ -580,6 +815,10 @@ int main() {
     passed &= TestSimultaneousTrade();
     passed &= TestKnockbackAtStageBoundary();
     passed &= TestHeldAttackDoesNotRepeat();
+    passed &= TestEnergyRulesAndSpecialFoundation();
+    passed &= TestFrameCommandEdgeBuffer();
+    passed &= TestChargeThresholdsAndMaximum();
+    passed &= TestChargeInterruptionAndCombatLockouts();
     passed &= TestHealthClampKoAndKoLockout();
     passed &= TestFixedTickReplayConsistency();
     return passed ? 0 : 1;

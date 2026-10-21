@@ -31,11 +31,15 @@ struct Fighter {
     float collisionHeight;
     int health;
     int maximumHealth;
+    int energy;
+    int maximumEnergy;
     CombatState combatState;
     MoveId currentMove;
     AttackPhase attackPhase;
     int combatStateFrame;
     int hitStunFrames;
+    int chargeFrames;
+    ChargeReleaseOutcome chargeReleaseOutcome;
     bool attackHasConnected;
     int hitFlashFrames;
     int blockFlashFrames;

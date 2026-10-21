@@ -99,6 +99,8 @@ Phase 1C deliberately uses no chip damage, block-stun, or combo tracking. Those 
 
 ## Phase 1D — Special and charged attacks
 
+**Status:** In progress. Phase 1D-A energy, input buffering, and charge-state foundations are complete and verified on 2026-10-21. Phase 1D-B character specials, charged attack resolution, projectiles, and ultimate work remain planned.
+
 **Objectives**
 
 - Differentiate the two fighters with signature moves.
@@ -118,6 +120,18 @@ Phase 1C deliberately uses no chip damage, block-stun, or combo tracking. Those 
 - Moves cannot begin without sufficient energy, and energy changes exactly once per qualifying event.
 - Charge levels transition on the documented simulation frames and cap correctly.
 - Projectile lifetime, collision, ownership, and repeated-hit behavior are tested.
+
+### Phase 1D-A — Energy system and special-move foundation
+
+**Status:** Complete. The 0–100 energy economy, reserved 25-energy special-spending rule, held/pressed/released commands, edge buffering, grounded 18–72-tick charge state, interruption/lockouts, energy/charge HUD, and regression coverage are implemented. Native Linux and WebAssembly builds succeed; native first-frame and Chrome interactive runtime checks are recorded in `docs/STATUS.md` and `docs/CHANGELOG.md`.
+
+Phase 1D-A deliberately does not include character-specific attacks, projectiles, charged damage/hitboxes, or ultimates. Its acceptance criteria are exact once-per-activation energy awards, clamping/non-underflow, lossless one-shot input delivery, fixed-tick threshold/cap behavior, valid-hit interruption, action mutual exclusion, and regression/replay consistency.
+
+### Phase 1D-B — Character specials and charged attack resolution
+
+**Status:** Planned.
+
+Define data-backed VOLT/EMBER special phases and atomic spending on valid activation; connect ready charge outcomes to documented charged attack levels/damage/hitboxes; add projectile ownership/lifetime/collision/repeated-hit rules; then implement character presentation and any ultimate scope retained for Phase 1D. Phase 1D is not complete until the parent acceptance criteria are verified.
 
 ## Phase 1E — Complete local matches
 
