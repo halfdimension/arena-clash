@@ -99,7 +99,7 @@ Phase 1C deliberately uses no chip damage, block-stun, or combo tracking. Those 
 
 ## Phase 1D — Special and charged attacks
 
-**Status:** In progress. Phase 1D-A energy, input buffering, and charge-state foundations are complete and verified on 2026-10-21. Phase 1D-B character specials, charged attack resolution, projectiles, and ultimate work remain planned.
+**Status:** In progress. Phase 1D-A energy/input/charge foundations and Phase 1D-B character-specific specials are complete and verified on 2026-10-21. Charged attack resolution and ultimate work remain planned.
 
 **Objectives**
 
@@ -127,11 +127,17 @@ Phase 1C deliberately uses no chip damage, block-stun, or combo tracking. Those 
 
 Phase 1D-A deliberately does not include character-specific attacks, projectiles, charged damage/hitboxes, or ultimates. Its acceptance criteria are exact once-per-activation energy awards, clamping/non-underflow, lossless one-shot input delivery, fixed-tick threshold/cap behavior, valid-hit interruption, action mutual exclusion, and regression/replay consistency.
 
-### Phase 1D-B — Character specials and charged attack resolution
+### Phase 1D-B — Character-specific special powers
+
+**Status:** Complete. VOLT's 25-energy Thunder Bolt and EMBER's 25-energy Inferno Burst use data-backed startup/active/recovery, damage, stun, knockback, and presentation. Thunder Bolt uses a fixed-capacity authoritative projectile pool with tested ownership, captured direction, movement, collision, block, lifetime, arena-exit, and repeated-hit rules. Inferno Burst uses a tested facing-aware short-range activation. Both moves spend atomically, participate in pre-mutation simultaneous contact resolution, obey combat lockouts, and grant no energy on special contact.
+
+Native Linux and WebAssembly builds pass. Chrome runtime checks exercised `H` and semicolon activation, visible meter spending, Thunder Bolt flight, Inferno Burst presentation, damage, and KO. Phase 1D-B deliberately excludes charged-attack damage/hitboxes, ultimates, AI, networking, and round-flow changes.
+
+### Phase 1D-C — Charged attack resolution and remaining Phase 1D scope
 
 **Status:** Planned.
 
-Define data-backed VOLT/EMBER special phases and atomic spending on valid activation; connect ready charge outcomes to documented charged attack levels/damage/hitboxes; add projectile ownership/lifetime/collision/repeated-hit rules; then implement character presentation and any ultimate scope retained for Phase 1D. Phase 1D is not complete until the parent acceptance criteria are verified.
+Specify and connect the existing ready charge outcome to documented charged attack levels, startup/active/recovery, damage, hitboxes, and interruption/cancel behavior. Decide whether ultimates remain in Phase 1D or move to a later milestone before implementation. Phase 1D is not complete until the remaining parent acceptance criteria are implemented and verified.
 
 ## Phase 1E — Complete local matches
 

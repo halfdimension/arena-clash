@@ -41,8 +41,11 @@ struct Fighter {
     int chargeFrames;
     ChargeReleaseOutcome chargeReleaseOutcome;
     bool attackHasConnected;
+    bool moveEffectCreated;
     int hitFlashFrames;
     int blockFlashFrames;
+    MoveId specialImpactMove;
+    int specialImpactFrames;
 };
 
 }  // namespace arena

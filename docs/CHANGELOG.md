@@ -6,6 +6,25 @@ The format is inspired by Keep a Changelog. The project does not yet have a rele
 
 ## Unreleased
 
+### Added — 2026-10-21 (Phase 1D-B character specials)
+
+- Extended move definitions with owner, behavior, energy cost, and projectile tuning while retaining the normal startup/active/recovery pipeline.
+- Added VOLT's 25-energy Thunder Bolt: 12 startup, one projectile-spawn active tick, 20 recovery, a 34×22 projectile at 650 units/second for up to 90 ticks, 16 damage, 18 hit-stun, and 420 knockback.
+- Added EMBER's 25-energy Inferno Burst: 16 startup, five active ticks, 24 recovery, a facing-aware 110×96 close-range hitbox, 20 damage, 24 hit-stun, and 620 knockback.
+- Added a fixed eight-slot value projectile pool with ownership, captured direction, position/velocity, lifetime, and hitbox state; projectiles persist independently of their owner's later state and are removed on contact, expiry, or arena exit.
+- Unified fighter and projectile contact snapshotting so valid normal/special/projectile interactions resolve fairly even when another contact interrupts a source on the same tick.
+- Added cyan Thunder Bolt casting/projectile/trail/impact effects and orange-red Inferno Burst casting/explosion/impact effects using lightweight raylib primitives.
+- Added headless coverage for special activation and every spending lockout, exact move timing, held-input behavior, startup interruption/no refund, projectile lifecycle/ownership/direction/owner independence/blocking, burst hit/miss/block/facing/one-hit behavior, trades, KO, simultaneous specials, and full projectile replay state.
+
+### Verified — 2026-10-21 (Phase 1D-B completion)
+
+- Built the isolated and desktop Linux targets; both CTest runs passed 1 of 1 test executables with all Phase 1A–1D-B regressions.
+- Built the Emscripten 6.0.12/raylib 6.2 WebAssembly target and exercised both special controls in Chrome 153.
+- Built meter through real browser combat, then captured Thunder Bolt's named cyan projectile/trail with energy reduced from 36 to 11.
+- Captured Inferno Burst's named expanding fire effect, 25-energy deduction, 20-damage impact feedback, and KO after semicolon input.
+- Confirmed WebGL error state 0 with no JavaScript or Wasm exception. The existing favicon 404 and headless screenshot/readback warnings remained the only page diagnostics.
+- Launched the native X11/OpenGL 4.6 build and confirmed renderer/first-frame initialization; the automated run timed out after five seconds without native input or normal-shutdown verification.
+
 ### Added — 2026-10-21 (Phase 1D-A energy and charge foundation)
 
 - Added centralized 0–100 energy rules: light hits award 8, heavy hits award 12, and blocked attacks award 4 to the attacker plus 6 to the defender, with once-per-activation awards and clamping.

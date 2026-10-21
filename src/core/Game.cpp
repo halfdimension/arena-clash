@@ -18,6 +18,7 @@ constexpr float kFighterCollisionHeight = 112.0F;
 constexpr float kGroundKnockbackFriction = 0.82F;
 constexpr int kHitFlashDuration = 5;
 constexpr int kBlockFlashDuration = 4;
+constexpr int kSpecialImpactDuration = 8;
 
 struct PendingHit {
     bool valid = false;
@@ -25,6 +26,8 @@ struct PendingHit {
     std::size_t attackerIndex = 0;
     std::size_t defenderIndex = 0;
     const MoveDefinition* move = nullptr;
+    std::size_t projectileIndex = kMaximumProjectiles;
+    float impactOriginX = 0.0F;
 };
 
 Fighter MakeFighter(FighterId id, float positionX, float movementSpeed, float jumpVelocity,
@@ -52,7 +55,10 @@ Fighter MakeFighter(FighterId id, float positionX, float movementSpeed, float ju
         0,
         ChargeReleaseOutcome::None,
         false,
+        false,
         0,
+        0,
+        MoveId::None,
         0,
     };
 }
@@ -76,6 +82,7 @@ void SetAvailable(Fighter& fighter) {
     fighter.combatStateFrame = 0;
     fighter.hitStunFrames = 0;
     fighter.attackHasConnected = false;
+    fighter.moveEffectCreated = false;
 }
 
 void StartAttack(Fighter& fighter, MoveId moveId) {
@@ -84,6 +91,7 @@ void StartAttack(Fighter& fighter, MoveId moveId) {
     fighter.attackPhase = AttackPhase::Startup;
     fighter.combatStateFrame = 0;
     fighter.attackHasConnected = false;
+    fighter.moveEffectCreated = false;
     if (fighter.grounded) {
         fighter.velocity.x = 0.0F;
     }
@@ -97,6 +105,7 @@ void StartCharging(Fighter& fighter) {
     fighter.chargeFrames = 0;
     fighter.chargeReleaseOutcome = ChargeReleaseOutcome::None;
     fighter.attackHasConnected = false;
+    fighter.moveEffectCreated = false;
     fighter.velocity.x = 0.0F;
 }
 
@@ -112,6 +121,10 @@ void PrepareCombatState(Fighter& fighter, const FighterCommand& command) {
     fighter.chargeReleaseOutcome = ChargeReleaseOutcome::None;
     fighter.hitFlashFrames = std::max(0, fighter.hitFlashFrames - 1);
     fighter.blockFlashFrames = std::max(0, fighter.blockFlashFrames - 1);
+    fighter.specialImpactFrames = std::max(0, fighter.specialImpactFrames - 1);
+    if (fighter.specialImpactFrames == 0) {
+        fighter.specialImpactMove = MoveId::None;
+    }
 
     if (fighter.combatState == CombatState::HitStun &&
         fighter.combatStateFrame >= fighter.hitStunFrames) {
@@ -158,6 +171,10 @@ void PrepareCombatState(Fighter& fighter, const FighterCommand& command) {
         StartAttack(fighter, MoveId::Light);
     } else if (command.heavyAttackPressed) {
         StartAttack(fighter, MoveId::Heavy);
+    } else if (command.specialAttackPressed && CanActivateSpecial(fighter)) {
+        if (SpendEnergyForSpecial(fighter)) {
+            StartAttack(fighter, GetSpecialMoveId(fighter));
+        }
     } else if (command.chargedAttackPressed && fighter.grounded) {
         StartCharging(fighter);
         if (command.chargedAttackReleased) {
@@ -274,6 +291,73 @@ void UpdateFacingDirections(GameState& state) {
     }
 }
 
+std::size_t FighterIndex(FighterId fighterId) {
+    return fighterId == FighterId::Volt ? 0U : 1U;
+}
+
+Rectanglef MakeProjectileHitbox(const Projectile& projectile) {
+    const MoveDefinition& move = GetMoveDefinition(projectile.sourceMove);
+    return {
+        projectile.position.x - move.hitbox.width * 0.5F,
+        projectile.position.y - move.hitbox.height * 0.5F,
+        move.hitbox.width,
+        move.hitbox.height,
+    };
+}
+
+void AdvanceProjectiles(GameState& state) {
+    for (Projectile& projectile : state.projectiles) {
+        if (!projectile.active) {
+            continue;
+        }
+        projectile.position.x +=
+            projectile.velocity.x * static_cast<float>(kFixedDeltaSeconds);
+        projectile.position.y +=
+            projectile.velocity.y * static_cast<float>(kFixedDeltaSeconds);
+        projectile.hitbox = MakeProjectileHitbox(projectile);
+        if (projectile.hitbox.x + projectile.hitbox.width < kArenaLeftBoundary ||
+            projectile.hitbox.x > kArenaRightBoundary) {
+            projectile.active = false;
+        }
+    }
+}
+
+void SpawnActiveProjectiles(GameState& state) {
+    for (Fighter& fighter : state.fighters) {
+        if (fighter.combatState != CombatState::Attacking ||
+            fighter.attackPhase != AttackPhase::Active || fighter.moveEffectCreated) {
+            continue;
+        }
+
+        const MoveDefinition& move = GetMoveDefinition(fighter.currentMove);
+        if (move.behavior != MoveBehavior::Projectile) {
+            continue;
+        }
+
+        fighter.moveEffectCreated = true;
+        for (Projectile& projectile : state.projectiles) {
+            if (projectile.active) {
+                continue;
+            }
+
+            const float direction = fighter.facing == FacingDirection::Right ? 1.0F : -1.0F;
+            const float bodyEdge = fighter.collisionWidth * 0.5F + move.hitbox.forwardOffset;
+            projectile.active = true;
+            projectile.owner = fighter.id;
+            projectile.sourceMove = move.id;
+            projectile.direction = fighter.facing;
+            projectile.position = {
+                fighter.position.x + direction * (bodyEdge + move.hitbox.width * 0.5F),
+                fighter.position.y - move.hitbox.bottomOffset - move.hitbox.height * 0.5F,
+            };
+            projectile.velocity = {direction * move.projectileSpeed, 0.0F};
+            projectile.remainingLifetimeFrames = move.projectileLifetimeFrames;
+            projectile.hitbox = MakeProjectileHitbox(projectile);
+            break;
+        }
+    }
+}
+
 PendingHit FindPendingHit(const GameState& state, std::size_t attackerIndex) {
     const std::size_t defenderIndex = 1U - attackerIndex;
     const Fighter& attacker = state.fighters[attackerIndex];
@@ -284,13 +368,37 @@ PendingHit FindPendingHit(const GameState& state, std::size_t attackerIndex) {
     }
 
     const MoveDefinition& move = GetMoveDefinition(attacker.currentMove);
+    if (move.behavior == MoveBehavior::Projectile) {
+        return {};
+    }
     if (!RectanglesOverlap(GetAttackHitbox(attacker, move), GetHurtbox(defender))) {
         return {};
     }
 
     const bool blocked = defender.combatState == CombatState::Blocking && defender.grounded &&
                          IsAttackInFrontOfDefender(attacker, defender);
-    return {true, blocked, attackerIndex, defenderIndex, &move};
+    return {true, blocked, attackerIndex, defenderIndex, &move, kMaximumProjectiles,
+            attacker.position.x};
+}
+
+PendingHit FindProjectilePendingHit(const GameState& state, std::size_t projectileIndex) {
+    const Projectile& projectile = state.projectiles[projectileIndex];
+    if (!projectile.active) {
+        return {};
+    }
+
+    const std::size_t attackerIndex = FighterIndex(projectile.owner);
+    const std::size_t defenderIndex = 1U - attackerIndex;
+    const Fighter& defender = state.fighters[defenderIndex];
+    if (!RectanglesOverlap(projectile.hitbox, GetHurtbox(defender))) {
+        return {};
+    }
+
+    const bool blocked = defender.combatState == CombatState::Blocking && defender.grounded &&
+                         IsPositionInFrontOfDefender(projectile.position.x, defender);
+    return {true, blocked, attackerIndex, defenderIndex,
+            &GetMoveDefinition(projectile.sourceMove), projectileIndex,
+            projectile.position.x};
 }
 
 void AdvanceCombatFrame(Fighter& fighter) {
@@ -306,8 +414,25 @@ void AdvanceCombatFrame(Fighter& fighter) {
 
 int EnergyGainForHit(MoveId moveId) {
     const CombatRules& combatRules = GetCombatRules();
-    return moveId == MoveId::Heavy ? combatRules.heavyHitEnergyGain
-                                   : combatRules.lightHitEnergyGain;
+    if (moveId == MoveId::Light) {
+        return combatRules.lightHitEnergyGain;
+    }
+    if (moveId == MoveId::Heavy) {
+        return combatRules.heavyHitEnergyGain;
+    }
+    return 0;
+}
+
+void AgeProjectiles(GameState& state) {
+    for (Projectile& projectile : state.projectiles) {
+        if (!projectile.active) {
+            continue;
+        }
+        --projectile.remainingLifetimeFrames;
+        if (projectile.remainingLifetimeFrames <= 0) {
+            projectile.active = false;
+        }
+    }
 }
 
 void ApplyPendingHit(GameState& state, const PendingHit& hit) {
@@ -317,20 +442,31 @@ void ApplyPendingHit(GameState& state, const PendingHit& hit) {
 
     Fighter& attacker = state.fighters[hit.attackerIndex];
     Fighter& defender = state.fighters[hit.defenderIndex];
+    const int hitEnergyGain = EnergyGainForHit(hit.move->id);
+    const bool isSpecial = hit.move->energyCost > 0;
 
     if (hit.blocked) {
-        const CombatRules& combatRules = GetCombatRules();
-        GainEnergy(attacker, combatRules.blockedAttackerEnergyGain);
-        GainEnergy(defender, combatRules.blockedDefenderEnergyGain);
+        if (hitEnergyGain > 0) {
+            const CombatRules& combatRules = GetCombatRules();
+            GainEnergy(attacker, combatRules.blockedAttackerEnergyGain);
+            GainEnergy(defender, combatRules.blockedDefenderEnergyGain);
+        }
         defender.blockFlashFrames = kBlockFlashDuration;
+        if (isSpecial) {
+            defender.specialImpactMove = hit.move->id;
+            defender.specialImpactFrames = kSpecialImpactDuration;
+        }
         return;
     }
 
-    GainEnergy(attacker, EnergyGainForHit(hit.move->id));
+    GainEnergy(attacker, hitEnergyGain);
     defender.health = std::max(0, defender.health - hit.move->damage);
     defender.hitFlashFrames = kHitFlashDuration;
-    const float knockbackDirection =
-        attacker.position.x <= defender.position.x ? 1.0F : -1.0F;
+    if (isSpecial) {
+        defender.specialImpactMove = hit.move->id;
+        defender.specialImpactFrames = kSpecialImpactDuration;
+    }
+    const float knockbackDirection = hit.impactOriginX <= defender.position.x ? 1.0F : -1.0F;
     defender.velocity.x = hit.move->knockbackStrength * knockbackDirection;
     if (defender.combatState == CombatState::Charging) {
         defender.chargeReleaseOutcome = ChargeReleaseOutcome::Interrupted;
@@ -338,6 +474,7 @@ void ApplyPendingHit(GameState& state, const PendingHit& hit) {
     defender.currentMove = MoveId::None;
     defender.attackPhase = AttackPhase::None;
     defender.attackHasConnected = false;
+    defender.moveEffectCreated = false;
     defender.combatStateFrame = 0;
 
     if (defender.health == 0) {
@@ -357,6 +494,7 @@ void Game::initialize() {
                       FacingDirection::Right),
           MakeFighter(FighterId::Ember, 920.0F, kEmberMovementSpeed, kEmberJumpVelocity,
                       FacingDirection::Left)}},
+        {},
         0,
     };
 }
@@ -373,23 +511,35 @@ void Game::advanceSimulation(const FrameCommands& commands) {
     AdvanceFighter(state_.fighters[1], commands.fighters[1]);
     ResolveFighterCollision(state_, previousPositionsX);
     UpdateFacingDirections(state_);
+    AdvanceProjectiles(state_);
+    SpawnActiveProjectiles(state_);
 
-    // Snapshot both hit results before applying either, so valid same-tick trades are fair.
-    const std::array<PendingHit, 2> pendingHits = {
-        FindPendingHit(state_, 0),
-        FindPendingHit(state_, 1),
-    };
+    // Snapshot every fighter and projectile contact before applying any outcome.
+    std::array<PendingHit, 2 + kMaximumProjectiles> pendingHits{};
+    pendingHits[0] = FindPendingHit(state_, 0);
+    pendingHits[1] = FindPendingHit(state_, 1);
+    for (std::size_t projectileIndex = 0; projectileIndex < state_.projectiles.size();
+         ++projectileIndex) {
+        pendingHits[2 + projectileIndex] =
+            FindProjectilePendingHit(state_, projectileIndex);
+    }
 
     for (const PendingHit& hit : pendingHits) {
         if (hit.valid) {
-            state_.fighters[hit.attackerIndex].attackHasConnected = true;
+            if (hit.projectileIndex < state_.projectiles.size()) {
+                state_.projectiles[hit.projectileIndex].active = false;
+            } else {
+                state_.fighters[hit.attackerIndex].attackHasConnected = true;
+            }
         }
     }
 
     AdvanceCombatFrame(state_.fighters[0]);
     AdvanceCombatFrame(state_.fighters[1]);
-    ApplyPendingHit(state_, pendingHits[0]);
-    ApplyPendingHit(state_, pendingHits[1]);
+    for (const PendingHit& hit : pendingHits) {
+        ApplyPendingHit(state_, hit);
+    }
+    AgeProjectiles(state_);
     ++state_.simulationFrame;
 }
 

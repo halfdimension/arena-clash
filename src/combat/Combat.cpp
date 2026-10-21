@@ -8,8 +8,13 @@
 namespace arena {
 namespace {
 
+constexpr int kSpecialEnergyCost = 25;
+
 constexpr MoveDefinition kLightMove = {
     MoveId::Light,
+    MoveOwner::Any,
+    MoveBehavior::Melee,
+    0,
     6,
     5,
     3,
@@ -17,10 +22,15 @@ constexpr MoveDefinition kLightMove = {
     {52.0F, 44.0F, 4.0F, 42.0F},
     12,
     300.0F,
+    0.0F,
+    0,
 };
 
 constexpr MoveDefinition kHeavyMove = {
     MoveId::Heavy,
+    MoveOwner::Any,
+    MoveBehavior::Melee,
+    0,
     14,
     12,
     4,
@@ -28,6 +38,40 @@ constexpr MoveDefinition kHeavyMove = {
     {72.0F, 60.0F, 6.0F, 26.0F},
     20,
     480.0F,
+    0.0F,
+    0,
+};
+
+constexpr MoveDefinition kThunderBoltMove = {
+    MoveId::ThunderBolt,
+    MoveOwner::Volt,
+    MoveBehavior::Projectile,
+    kSpecialEnergyCost,
+    16,
+    12,
+    1,
+    20,
+    {34.0F, 22.0F, 18.0F, 63.0F},
+    18,
+    420.0F,
+    650.0F,
+    90,
+};
+
+constexpr MoveDefinition kInfernoBurstMove = {
+    MoveId::InfernoBurst,
+    MoveOwner::Ember,
+    MoveBehavior::Melee,
+    kSpecialEnergyCost,
+    20,
+    16,
+    5,
+    24,
+    {110.0F, 96.0F, -16.0F, 8.0F},
+    24,
+    620.0F,
+    0.0F,
+    0,
 };
 
 constexpr CombatRules kCombatRules = {
@@ -37,7 +81,7 @@ constexpr CombatRules kCombatRules = {
     12,
     4,
     6,
-    25,
+    kSpecialEnergyCost,
     18,
     72,
 };
@@ -46,7 +90,23 @@ constexpr CombatRules kCombatRules = {
 
 const MoveDefinition& GetMoveDefinition(MoveId moveId) {
     assert(moveId != MoveId::None);
-    return moveId == MoveId::Heavy ? kHeavyMove : kLightMove;
+    switch (moveId) {
+        case MoveId::Light:
+            return kLightMove;
+        case MoveId::Heavy:
+            return kHeavyMove;
+        case MoveId::ThunderBolt:
+            return kThunderBoltMove;
+        case MoveId::InfernoBurst:
+            return kInfernoBurstMove;
+        case MoveId::None:
+            break;
+    }
+    return kLightMove;
+}
+
+MoveId GetSpecialMoveId(const Fighter& fighter) {
+    return fighter.id == FighterId::Volt ? MoveId::ThunderBolt : MoveId::InfernoBurst;
 }
 
 const CombatRules& GetCombatRules() {
@@ -61,15 +121,16 @@ void GainEnergy(Fighter& fighter, int amount) {
 }
 
 bool CanActivateSpecial(const Fighter& fighter) {
+    const MoveDefinition& move = GetMoveDefinition(GetSpecialMoveId(fighter));
     return fighter.combatState == CombatState::Available &&
-           fighter.energy >= kCombatRules.specialEnergyCost;
+           fighter.energy >= move.energyCost;
 }
 
 bool SpendEnergyForSpecial(Fighter& fighter) {
     if (!CanActivateSpecial(fighter)) {
         return false;
     }
-    fighter.energy -= kCombatRules.specialEnergyCost;
+    fighter.energy -= GetMoveDefinition(GetSpecialMoveId(fighter)).energyCost;
     return true;
 }
 
@@ -101,10 +162,14 @@ bool RectanglesOverlap(const Rectanglef& first, const Rectanglef& second) {
 }
 
 bool IsAttackInFrontOfDefender(const Fighter& attacker, const Fighter& defender) {
+    return IsPositionInFrontOfDefender(attacker.position.x, defender);
+}
+
+bool IsPositionInFrontOfDefender(float positionX, const Fighter& defender) {
     if (defender.facing == FacingDirection::Right) {
-        return attacker.position.x >= defender.position.x;
+        return positionX >= defender.position.x;
     }
-    return attacker.position.x <= defender.position.x;
+    return positionX <= defender.position.x;
 }
 
 }  // namespace arena

@@ -8,6 +8,19 @@ enum class MoveId {
     None,
     Light,
     Heavy,
+    ThunderBolt,
+    InfernoBurst,
+};
+
+enum class MoveOwner {
+    Any,
+    Volt,
+    Ember,
+};
+
+enum class MoveBehavior {
+    Melee,
+    Projectile,
 };
 
 enum class CombatState {
@@ -49,6 +62,9 @@ struct HitboxDefinition {
 
 struct MoveDefinition {
     MoveId id;
+    MoveOwner owner;
+    MoveBehavior behavior;
+    int energyCost;
     int damage;
     int startupFrames;
     int activeFrames;
@@ -56,6 +72,8 @@ struct MoveDefinition {
     HitboxDefinition hitbox;
     int hitStunFrames;
     float knockbackStrength;
+    float projectileSpeed;
+    int projectileLifetimeFrames;
 };
 
 struct CombatRules {
@@ -71,6 +89,7 @@ struct CombatRules {
 };
 
 const MoveDefinition& GetMoveDefinition(MoveId moveId);
+MoveId GetSpecialMoveId(const Fighter& fighter);
 const CombatRules& GetCombatRules();
 void GainEnergy(Fighter& fighter, int amount);
 bool CanActivateSpecial(const Fighter& fighter);
@@ -79,5 +98,6 @@ Rectanglef GetHurtbox(const Fighter& fighter);
 Rectanglef GetAttackHitbox(const Fighter& fighter, const MoveDefinition& move);
 bool RectanglesOverlap(const Rectanglef& first, const Rectanglef& second);
 bool IsAttackInFrontOfDefender(const Fighter& attacker, const Fighter& defender);
+bool IsPositionInFrontOfDefender(float positionX, const Fighter& defender);
 
 }  // namespace arena

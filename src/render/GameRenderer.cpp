@@ -80,7 +80,18 @@ void DrawFighter(const Fighter& fighter) {
         frontHand = {x + 35.0F, floorY - 73.0F};
     } else if (fighter.combatState == CombatState::Attacking) {
         const bool heavy = fighter.currentMove == MoveId::Heavy;
-        if (fighter.attackPhase == AttackPhase::Startup) {
+        const bool thunderBolt = fighter.currentMove == MoveId::ThunderBolt;
+        const bool infernoBurst = fighter.currentMove == MoveId::InfernoBurst;
+        if ((thunderBolt || infernoBurst) && fighter.attackPhase == AttackPhase::Startup) {
+            rearHand = {x + facing * 30.0F, floorY - 89.0F};
+            frontHand = {x + facing * 42.0F, floorY - 89.0F};
+        } else if (thunderBolt && fighter.attackPhase == AttackPhase::Active) {
+            rearHand = {x + facing * 44.0F, floorY - 80.0F};
+            frontHand = {x + facing * 72.0F, floorY - 92.0F};
+        } else if (infernoBurst && fighter.attackPhase == AttackPhase::Active) {
+            rearHand = {x - facing * 66.0F, floorY - 86.0F};
+            frontHand = {x + facing * 66.0F, floorY - 86.0F};
+        } else if (fighter.attackPhase == AttackPhase::Startup) {
             frontHand = {x - facing * (heavy ? 34.0F : 18.0F),
                          floorY - (heavy ? 124.0F : 108.0F)};
         } else if (fighter.attackPhase == AttackPhase::Active) {
@@ -146,8 +157,11 @@ void DrawFighter(const Fighter& fighter) {
     }
     if (fighter.combatState == CombatState::Attacking &&
         fighter.attackPhase == AttackPhase::Active) {
-        DrawCircleLines(static_cast<int>(frontHand.x), static_cast<int>(frontHand.y),
-                        fighter.currentMove == MoveId::Heavy ? 28.0F : 18.0F, secondary);
+        if (fighter.currentMove != MoveId::InfernoBurst) {
+            DrawCircleLines(static_cast<int>(frontHand.x), static_cast<int>(frontHand.y),
+                            fighter.currentMove == MoveId::Heavy ? 28.0F : 18.0F,
+                            secondary);
+        }
     }
     if (fighter.hitFlashFrames > 0) {
         const float effectRadius = 18.0F + static_cast<float>(fighter.hitFlashFrames) * 4.0F;
@@ -156,9 +170,52 @@ void DrawFighter(const Fighter& fighter) {
         DrawLineEx(Vector2{x - 30.0F, floorY - 122.0F},
                    Vector2{x + 32.0F, floorY - 62.0F}, 4.0F, secondary);
     }
+    if (fighter.specialImpactFrames > 0) {
+        const bool electric = fighter.specialImpactMove == MoveId::ThunderBolt;
+        const Color impactColor = electric ? kVolt : kEmberGlow;
+        const float impactRadius = 24.0F + fighter.specialImpactFrames * 4.0F;
+        DrawCircleLines(static_cast<int>(x), static_cast<int>(floorY - 87.0F),
+                        impactRadius, impactColor);
+        DrawCircleLines(static_cast<int>(x), static_cast<int>(floorY - 87.0F),
+                        impactRadius * 0.65F, RAYWHITE);
+    }
     if (fighter.combatState == CombatState::KnockedOut) {
         DrawCenteredText("KO", static_cast<int>(x), static_cast<int>(floorY - 205.0F),
                          30, Color{255, 234, 150, 255});
+    }
+}
+
+void DrawSpecialEffects(const GameState& state) {
+    for (const Fighter& fighter : state.fighters) {
+        if (fighter.combatState != CombatState::Attacking ||
+            fighter.currentMove != MoveId::InfernoBurst ||
+            fighter.attackPhase != AttackPhase::Active) {
+            continue;
+        }
+        const float pulse = static_cast<float>(fighter.combatStateFrame) * 8.0F;
+        const Vector2 center = {fighter.position.x, fighter.position.y - 61.0F};
+        DrawCircleGradient(center, 78.0F + pulse,
+                           Color{255, 207, 74, 190}, Color{255, 68, 30, 18});
+        DrawCircleLines(static_cast<int>(center.x), static_cast<int>(center.y),
+                        58.0F + pulse, kEmberGlow);
+        DrawCircleLines(static_cast<int>(center.x), static_cast<int>(center.y),
+                        86.0F + pulse, kEmber);
+    }
+
+    for (const Projectile& projectile : state.projectiles) {
+        if (!projectile.active || projectile.sourceMove != MoveId::ThunderBolt) {
+            continue;
+        }
+        const float direction = projectile.direction == FacingDirection::Right ? 1.0F : -1.0F;
+        const Vector2 center = {projectile.position.x, projectile.position.y};
+        DrawLineEx(Vector2{center.x - direction * 42.0F, center.y}, center,
+                   10.0F, Color{70, 220, 255, 90});
+        DrawCircleGradient(center, 20.0F, RAYWHITE, Color{70, 220, 255, 20});
+        DrawCircleLines(static_cast<int>(center.x), static_cast<int>(center.y),
+                        13.0F, kVolt);
+        DrawLineEx(Vector2{center.x - direction * 12.0F, center.y - 10.0F},
+                   Vector2{center.x + direction * 14.0F, center.y + 7.0F},
+                   3.0F, kVoltGlow);
     }
 }
 
@@ -169,10 +226,20 @@ void DrawDebugBoxes(const GameState& state) {
                              2.0F, Color{82, 255, 130, 220});
         if (fighter.combatState == CombatState::Attacking &&
             fighter.attackPhase == AttackPhase::Active) {
-            const Rectanglef hitbox =
-                GetAttackHitbox(fighter, GetMoveDefinition(fighter.currentMove));
-            DrawRectangleLinesEx(Rectangle{hitbox.x, hitbox.y, hitbox.width, hitbox.height},
-                                 3.0F, Color{255, 77, 96, 235});
+            const MoveDefinition& move = GetMoveDefinition(fighter.currentMove);
+            if (move.behavior == MoveBehavior::Melee) {
+                const Rectanglef hitbox = GetAttackHitbox(fighter, move);
+                DrawRectangleLinesEx(
+                    Rectangle{hitbox.x, hitbox.y, hitbox.width, hitbox.height},
+                    3.0F, Color{255, 77, 96, 235});
+            }
+        }
+    }
+    for (const Projectile& projectile : state.projectiles) {
+        if (projectile.active) {
+            DrawRectangleLinesEx(Rectangle{projectile.hitbox.x, projectile.hitbox.y,
+                                           projectile.hitbox.width, projectile.hitbox.height},
+                                 2.0F, Color{70, 220, 255, 235});
         }
     }
 }
@@ -246,6 +313,14 @@ void DrawHud(const GameState& state, const char* platformName, int framesPerSeco
     DrawCenteredText("ROUND 1", 640, 41, 18, Color{222, 213, 240, 255});
     DrawCenteredText("99", 640, 62, 30, RAYWHITE);
 
+    if (state.fighters[0].combatState == CombatState::Attacking &&
+        state.fighters[0].currentMove == MoveId::ThunderBolt) {
+        DrawCenteredText("THUNDER BOLT", 640, 128, 20, kVolt);
+    } else if (state.fighters[1].combatState == CombatState::Attacking &&
+               state.fighters[1].currentMove == MoveId::InfernoBurst) {
+        DrawCenteredText("INFERNO BURST", 640, 128, 20, kEmberGlow);
+    }
+
     DrawCenteredText("VOLT: A/D MOVE  W JUMP  S BLOCK  F LIGHT  G HEAVY  H SPECIAL  J CHARGE",
                      kLogicalWidth / 2, 646, 14, Color{204, 210, 231, 220});
     DrawCenteredText(
@@ -288,6 +363,7 @@ void GameRenderer::draw(const GameState& state, const char* platformName, int fr
     BeginTextureMode(sceneTarget_);
     ClearBackground(kInk);
     DrawArenaBackdrop(state.simulationFrame);
+    DrawSpecialEffects(state);
     DrawFighter(state.fighters[0]);
     DrawFighter(state.fighters[1]);
     if (drawDebugHitboxes) {

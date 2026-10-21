@@ -71,11 +71,58 @@ void AdvanceToFirstActiveFrame(arena::Game& game, std::size_t fighterIndex,
     }
 }
 
+void AdvanceUntilBothAvailable(arena::Game& game) {
+    for (int tick = 0; tick < 240; ++tick) {
+        if (Volt(game).combatState == arena::CombatState::Available &&
+            Ember(game).combatState == arena::CombatState::Available) {
+            return;
+        }
+        game.advanceSimulation({});
+    }
+}
+
+void EarnEnergy(arena::Game& game, std::size_t fighterIndex, int targetEnergy) {
+    while (game.state().fighters[fighterIndex].energy < targetEnergy) {
+        AdvanceUntilBothAvailable(game);
+        ApproachToBodyContact(game);
+        AdvanceToFirstActiveFrame(game, fighterIndex, arena::MoveId::Heavy);
+    }
+    AdvanceUntilBothAvailable(game);
+}
+
+void PressSpecial(arena::Game& game, std::size_t fighterIndex) {
+    arena::FrameCommands commands;
+    commands.fighters[fighterIndex].specialAttackHeld = true;
+    commands.fighters[fighterIndex].specialAttackPressed = true;
+    game.advanceSimulation(commands);
+}
+
+int ActiveProjectileCount(const arena::Game& game) {
+    int count = 0;
+    for (const arena::Projectile& projectile : game.state().projectiles) {
+        count += projectile.active ? 1 : 0;
+    }
+    return count;
+}
+
+const arena::Projectile* FirstActiveProjectile(const arena::Game& game) {
+    for (const arena::Projectile& projectile : game.state().projectiles) {
+        if (projectile.active) {
+            return &projectile;
+        }
+    }
+    return nullptr;
+}
+
 bool TestInitialStateAndMoveData() {
     arena::Game game;
     game.initialize();
     const arena::MoveDefinition& light = arena::GetMoveDefinition(arena::MoveId::Light);
     const arena::MoveDefinition& heavy = arena::GetMoveDefinition(arena::MoveId::Heavy);
+    const arena::MoveDefinition& thunderBolt =
+        arena::GetMoveDefinition(arena::MoveId::ThunderBolt);
+    const arena::MoveDefinition& infernoBurst =
+        arena::GetMoveDefinition(arena::MoveId::InfernoBurst);
     const arena::CombatRules& combatRules = arena::GetCombatRules();
 
     bool passed = true;
@@ -109,6 +156,21 @@ bool TestInitialStateAndMoveData() {
                          combatRules.minimumChargeFrames == 18 &&
                          combatRules.maximumChargeFrames == 72,
                      "energy and charge tuning is centralized");
+    passed &= Expect(thunderBolt.owner == arena::MoveOwner::Volt &&
+                         thunderBolt.behavior == arena::MoveBehavior::Projectile &&
+                         thunderBolt.energyCost == 25 && thunderBolt.damage == 16 &&
+                         thunderBolt.startupFrames == 12 && thunderBolt.activeFrames == 1 &&
+                         thunderBolt.recoveryFrames == 20 &&
+                         NearlyEqual(thunderBolt.projectileSpeed, 650.0F) &&
+                         thunderBolt.projectileLifetimeFrames == 90,
+                     "Thunder Bolt data matches Phase 1D-B values");
+    passed &= Expect(infernoBurst.owner == arena::MoveOwner::Ember &&
+                         infernoBurst.behavior == arena::MoveBehavior::Melee &&
+                         infernoBurst.energyCost == 25 && infernoBurst.damage == 20 &&
+                         infernoBurst.startupFrames == 16 && infernoBurst.activeFrames == 5 &&
+                         infernoBurst.recoveryFrames == 24 &&
+                         infernoBurst.knockbackStrength > thunderBolt.knockbackStrength,
+                     "Inferno Burst data matches Phase 1D-B values");
     return passed;
 }
 
@@ -700,6 +762,422 @@ bool TestChargeInterruptionAndCombatLockouts() {
     return passed;
 }
 
+bool TestSpecialActivationEnergyAndLifecycle() {
+    arena::Game insufficient;
+    insufficient.initialize();
+    PressSpecial(insufficient, 0);
+
+    bool passed = true;
+    passed &= Expect(Volt(insufficient).combatState == arena::CombatState::Available &&
+                         Volt(insufficient).energy == 0,
+                     "insufficient energy rejects Thunder Bolt without spending");
+
+    arena::Game thunderGame;
+    thunderGame.initialize();
+    EarnEnergy(thunderGame, 0, 25);
+    const int thunderEnergyBefore = Volt(thunderGame).energy;
+    const arena::MoveDefinition& thunder =
+        arena::GetMoveDefinition(arena::MoveId::ThunderBolt);
+    PressSpecial(thunderGame, 0);
+    passed &= Expect(Volt(thunderGame).combatState == arena::CombatState::Attacking &&
+                         Volt(thunderGame).currentMove == arena::MoveId::ThunderBolt &&
+                         Volt(thunderGame).attackPhase == arena::AttackPhase::Startup &&
+                         Volt(thunderGame).combatStateFrame == 1 &&
+                         Volt(thunderGame).energy == thunderEnergyBefore - thunder.energyCost,
+                     "valid VOLT special starts startup frame one and spends exactly once");
+    AdvanceEmpty(thunderGame, thunder.startupFrames - 1);
+    passed &= Expect(Volt(thunderGame).attackPhase == arena::AttackPhase::Startup &&
+                         Volt(thunderGame).combatStateFrame == thunder.startupFrames,
+                     "Thunder Bolt startup lasts exactly twelve ticks");
+    AdvanceEmpty(thunderGame, 1);
+    passed &= Expect(Volt(thunderGame).attackPhase == arena::AttackPhase::Active &&
+                         Volt(thunderGame).combatStateFrame == 1,
+                     "Thunder Bolt active spawn frame follows startup");
+    AdvanceEmpty(thunderGame, 1);
+    passed &= Expect(Volt(thunderGame).attackPhase == arena::AttackPhase::Recovery &&
+                         Volt(thunderGame).combatStateFrame == 1,
+                     "Thunder Bolt enters recovery after its one active tick");
+    const int thunderEnergyAfterStart = Volt(thunderGame).energy;
+    arena::FrameCommands heldSpecial;
+    heldSpecial.fighters[0].specialAttackHeld = true;
+    for (int tick = 0; tick < thunder.recoveryFrames + 8; ++tick) {
+        thunderGame.advanceSimulation(heldSpecial);
+    }
+    passed &= Expect(Volt(thunderGame).combatState == arena::CombatState::Available &&
+                         Volt(thunderGame).energy == thunderEnergyAfterStart,
+                     "held special input neither spends again nor restarts Thunder Bolt");
+
+    arena::Game infernoGame;
+    infernoGame.initialize();
+    EarnEnergy(infernoGame, 1, 25);
+    const int infernoEnergyBefore = Ember(infernoGame).energy;
+    const arena::MoveDefinition& inferno =
+        arena::GetMoveDefinition(arena::MoveId::InfernoBurst);
+    PressSpecial(infernoGame, 1);
+    AdvanceEmpty(infernoGame, inferno.startupFrames - 1);
+    passed &= Expect(Ember(infernoGame).attackPhase == arena::AttackPhase::Startup &&
+                         Ember(infernoGame).combatStateFrame == inferno.startupFrames &&
+                         Ember(infernoGame).energy == infernoEnergyBefore - inferno.energyCost,
+                     "Inferno Burst spends once and keeps exact startup timing");
+    AdvanceEmpty(infernoGame, 1);
+    passed &= Expect(Ember(infernoGame).attackPhase == arena::AttackPhase::Active &&
+                         Ember(infernoGame).combatStateFrame == 1,
+                     "Inferno Burst active phase begins after sixteen startup ticks");
+    AdvanceEmpty(infernoGame, inferno.activeFrames - 1);
+    passed &= Expect(Ember(infernoGame).attackPhase == arena::AttackPhase::Active &&
+                         Ember(infernoGame).combatStateFrame == inferno.activeFrames,
+                     "Inferno Burst remains active for exactly five ticks");
+    AdvanceEmpty(infernoGame, 1);
+    passed &= Expect(Ember(infernoGame).attackPhase == arena::AttackPhase::Recovery &&
+                         Ember(infernoGame).combatStateFrame == 1,
+                     "Inferno Burst recovery follows its final active tick");
+    AdvanceEmpty(infernoGame, inferno.recoveryFrames);
+    passed &= Expect(Ember(infernoGame).combatState == arena::CombatState::Available,
+                     "Inferno Burst returns to available after exact recovery");
+    return passed;
+}
+
+bool TestSpecialSpendingLockoutsAndInterruption() {
+    bool passed = true;
+
+    arena::Game recoveryGame;
+    recoveryGame.initialize();
+    EarnEnergy(recoveryGame, 0, 50);
+    PressSpecial(recoveryGame, 0);
+    const arena::MoveDefinition& thunder =
+        arena::GetMoveDefinition(arena::MoveId::ThunderBolt);
+    AdvanceEmpty(recoveryGame, thunder.startupFrames + thunder.activeFrames);
+    const int recoveryEnergy = Volt(recoveryGame).energy;
+    PressSpecial(recoveryGame, 0);
+    passed &= Expect(Volt(recoveryGame).attackPhase == arena::AttackPhase::Recovery &&
+                         Volt(recoveryGame).energy == recoveryEnergy,
+                     "special input during recovery cannot spend energy");
+
+    arena::Game stunGame;
+    stunGame.initialize();
+    EarnEnergy(stunGame, 0, 25);
+    ApproachToBodyContact(stunGame);
+    AdvanceToFirstActiveFrame(stunGame, 1, arena::MoveId::Light);
+    const int stunEnergy = Volt(stunGame).energy;
+    PressSpecial(stunGame, 0);
+    passed &= Expect(Volt(stunGame).combatState == arena::CombatState::HitStun &&
+                         Volt(stunGame).energy == stunEnergy,
+                     "special input during hit-stun cannot spend energy");
+
+    arena::Game chargingGame;
+    chargingGame.initialize();
+    EarnEnergy(chargingGame, 0, 25);
+    BeginCharge(chargingGame, 0);
+    const int chargingEnergy = Volt(chargingGame).energy;
+    arena::FrameCommands chargeAndSpecial;
+    chargeAndSpecial.fighters[0].chargedAttackHeld = true;
+    chargeAndSpecial.fighters[0].specialAttackPressed = true;
+    chargingGame.advanceSimulation(chargeAndSpecial);
+    passed &= Expect(Volt(chargingGame).combatState == arena::CombatState::Charging &&
+                         Volt(chargingGame).energy == chargingEnergy,
+                     "special input while charging cannot spend energy");
+
+    arena::Game interruptedGame;
+    interruptedGame.initialize();
+    EarnEnergy(interruptedGame, 0, 25);
+    ApproachToBodyContact(interruptedGame);
+    const int activationEnergy = Volt(interruptedGame).energy;
+    arena::FrameCommands simultaneousStart;
+    simultaneousStart.fighters[0].specialAttackPressed = true;
+    simultaneousStart.fighters[1].lightAttackPressed = true;
+    interruptedGame.advanceSimulation(simultaneousStart);
+    AdvanceEmpty(interruptedGame,
+                 arena::GetMoveDefinition(arena::MoveId::Light).startupFrames);
+    passed &= Expect(Volt(interruptedGame).combatState == arena::CombatState::HitStun &&
+                         Volt(interruptedGame).energy ==
+                             activationEnergy - thunder.energyCost &&
+                         ActiveProjectileCount(interruptedGame) == 0,
+                     "startup interruption cancels the special without refund or projectile");
+
+    arena::Game koGame;
+    koGame.initialize();
+    EarnEnergy(koGame, 0, 25);
+    for (int attack = 0; attack < 8 &&
+                         Volt(koGame).combatState != arena::CombatState::KnockedOut;
+         ++attack) {
+        AdvanceUntilBothAvailable(koGame);
+        ApproachToBodyContact(koGame);
+        AdvanceToFirstActiveFrame(koGame, 1, arena::MoveId::Heavy);
+    }
+    const int koEnergy = Volt(koGame).energy;
+    PressSpecial(koGame, 0);
+    passed &= Expect(Volt(koGame).combatState == arena::CombatState::KnockedOut &&
+                         Volt(koGame).energy == koEnergy,
+                     "special input while knocked out cannot spend energy");
+    return passed;
+}
+
+bool TestThunderBoltProjectileStateAndDamage() {
+    arena::Game game;
+    game.initialize();
+    EarnEnergy(game, 0, 25);
+
+    arena::FrameCommands separate;
+    separate.fighters[0].moveLeftHeld = true;
+    separate.fighters[1].moveRightHeld = true;
+    for (int tick = 0; tick < 40; ++tick) {
+        game.advanceSimulation(separate);
+    }
+    AdvanceUntilBothAvailable(game);
+
+    const int voltHealthBefore = Volt(game).health;
+    const int emberHealthBefore = Ember(game).health;
+    PressSpecial(game, 0);
+    const arena::MoveDefinition& thunder =
+        arena::GetMoveDefinition(arena::MoveId::ThunderBolt);
+    AdvanceEmpty(game, thunder.startupFrames);
+    const arena::Projectile* projectile = FirstActiveProjectile(game);
+
+    bool passed = true;
+    passed &= Expect(projectile != nullptr && ActiveProjectileCount(game) == 1,
+                     "Thunder Bolt spawns exactly one projectile on its active frame");
+    if (projectile == nullptr) {
+        return false;
+    }
+    passed &= Expect(projectile->owner == arena::FighterId::Volt &&
+                         projectile->sourceMove == arena::MoveId::ThunderBolt &&
+                         projectile->direction == arena::FacingDirection::Right &&
+                         projectile->velocity.x > 0.0F,
+                     "projectile stores VOLT ownership and captured facing direction");
+    const float projectileX = projectile->position.x;
+    const float projectileVelocityX = projectile->velocity.x;
+    game.advanceSimulation({});
+    projectile = FirstActiveProjectile(game);
+    passed &= Expect(projectile != nullptr &&
+                         NearlyEqual(projectile->position.x,
+                                     projectileX + projectileVelocityX *
+                                                       static_cast<float>(arena::kFixedDeltaSeconds)),
+                     "projectile movement uses fixed simulation delta");
+
+    arena::GameState copiedState = game.state();
+    copiedState.fighters[0].facing = arena::FacingDirection::Left;
+    passed &= Expect(copiedState.projectiles[0].direction == arena::FacingDirection::Right &&
+                         copiedState.projectiles[0].velocity.x == projectileVelocityX,
+                     "projectile direction is value state independent of later owner facing");
+
+    for (int tick = 0; tick < thunder.projectileLifetimeFrames &&
+                         ActiveProjectileCount(game) > 0;
+         ++tick) {
+        game.advanceSimulation({});
+    }
+    passed &= Expect(Volt(game).health == voltHealthBefore,
+                     "Thunder Bolt never damages its owner");
+    passed &= Expect(Ember(game).health == emberHealthBefore - thunder.damage &&
+                         Ember(game).combatState == arena::CombatState::HitStun &&
+                         Ember(game).hitStunFrames == thunder.hitStunFrames &&
+                         ActiveProjectileCount(game) == 0,
+                     "Thunder Bolt damages once, applies hit-stun, and is removed on contact");
+    passed &= Expect(Volt(game).energy == 11 && Ember(game).energy == 0,
+                     "special projectile contact grants no energy to either fighter");
+    return passed;
+}
+
+bool TestThunderBoltBlockingAndLifetime() {
+    arena::Game blockGame;
+    blockGame.initialize();
+    EarnEnergy(blockGame, 0, 25);
+    arena::FrameCommands separate;
+    separate.fighters[0].moveLeftHeld = true;
+    separate.fighters[1].moveRightHeld = true;
+    for (int tick = 0; tick < 35; ++tick) {
+        blockGame.advanceSimulation(separate);
+    }
+    AdvanceUntilBothAvailable(blockGame);
+    const int healthBeforeBlock = Ember(blockGame).health;
+    PressSpecial(blockGame, 0);
+    const arena::MoveDefinition& thunder =
+        arena::GetMoveDefinition(arena::MoveId::ThunderBolt);
+    AdvanceEmpty(blockGame, thunder.startupFrames);
+    arena::FrameCommands block;
+    block.fighters[1].blockHeld = true;
+    for (int tick = 0; tick < thunder.projectileLifetimeFrames &&
+                         ActiveProjectileCount(blockGame) > 0;
+         ++tick) {
+        blockGame.advanceSimulation(block);
+    }
+
+    bool passed = true;
+    passed &= Expect(Ember(blockGame).health == healthBeforeBlock &&
+                         Ember(blockGame).blockFlashFrames > 0 &&
+                         ActiveProjectileCount(blockGame) == 0,
+                     "grounded facing block consumes Thunder Bolt without damage");
+    passed &= Expect(Volt(blockGame).energy == 11 && Ember(blockGame).energy == 0,
+                     "blocked special grants no energy and cannot refund its cost");
+
+    arena::Game lifetimeGame;
+    lifetimeGame.initialize();
+    EarnEnergy(lifetimeGame, 0, 25);
+    arena::FrameCommands moveLeft;
+    moveLeft.fighters[0].moveLeftHeld = true;
+    moveLeft.fighters[1].moveLeftHeld = true;
+    for (int tick = 0; tick < arena::kSimulationRate * 4; ++tick) {
+        lifetimeGame.advanceSimulation(moveLeft);
+    }
+    arena::FrameCommands moveEmberRight;
+    moveEmberRight.fighters[1].moveRightHeld = true;
+    for (int tick = 0; tick < arena::kSimulationRate * 4; ++tick) {
+        lifetimeGame.advanceSimulation(moveEmberRight);
+    }
+    AdvanceUntilBothAvailable(lifetimeGame);
+    const int healthBeforeMiss = Ember(lifetimeGame).health;
+    PressSpecial(lifetimeGame, 0);
+    AdvanceEmpty(lifetimeGame, thunder.startupFrames);
+    AdvanceEmpty(lifetimeGame, 68);
+    arena::FrameCommands jump;
+    jump.fighters[1].jumpPressed = true;
+    jump.fighters[1].jumpHeld = true;
+    lifetimeGame.advanceSimulation(jump);
+    jump.fighters[1].jumpPressed = false;
+    for (int tick = 0; tick < 19; ++tick) {
+        lifetimeGame.advanceSimulation(jump);
+    }
+    passed &= Expect(ActiveProjectileCount(lifetimeGame) == 1,
+                     "missed Thunder Bolt remains active through lifetime tick 89");
+    lifetimeGame.advanceSimulation(jump);
+    passed &= Expect(ActiveProjectileCount(lifetimeGame) == 0 &&
+                         Ember(lifetimeGame).health == healthBeforeMiss,
+                     "missed Thunder Bolt expires exactly after 90 fixed ticks without damage");
+    return passed;
+}
+
+bool TestProjectilePersistsAfterOwnerHit() {
+    arena::Game game;
+    game.initialize();
+    EarnEnergy(game, 0, 25);
+    ApproachToBodyContact(game);
+    arena::FrameCommands createGap;
+    createGap.fighters[1].moveRightHeld = true;
+    for (int tick = 0; tick < 13; ++tick) {
+        game.advanceSimulation(createGap);
+    }
+
+    const int emberHealthBefore = Ember(game).health;
+    arena::FrameCommands attacks;
+    attacks.fighters[0].specialAttackPressed = true;
+    attacks.fighters[1].heavyAttackPressed = true;
+    game.advanceSimulation(attacks);
+    AdvanceEmpty(game, arena::GetMoveDefinition(arena::MoveId::ThunderBolt).startupFrames);
+
+    bool passed = true;
+    passed &= Expect(Volt(game).combatState == arena::CombatState::HitStun &&
+                         ActiveProjectileCount(game) == 1,
+                     "Thunder Bolt projectile survives its owner's same-tick interruption");
+    for (int tick = 0; tick < 8 && ActiveProjectileCount(game) > 0; ++tick) {
+        game.advanceSimulation({});
+    }
+    passed &= Expect(Ember(game).health == emberHealthBefore - 16 &&
+                         ActiveProjectileCount(game) == 0,
+                     "projectile can connect after its owner has entered hit-stun");
+    return passed;
+}
+
+bool TestInfernoBurstHitMissAndFacing() {
+    const arena::MoveDefinition& inferno =
+        arena::GetMoveDefinition(arena::MoveId::InfernoBurst);
+    arena::Game hitGame;
+    hitGame.initialize();
+    EarnEnergy(hitGame, 1, 25);
+    ApproachToBodyContact(hitGame);
+    const int voltHealthBefore = Volt(hitGame).health;
+    PressSpecial(hitGame, 1);
+    AdvanceEmpty(hitGame, inferno.startupFrames);
+
+    bool passed = true;
+    passed &= Expect(Volt(hitGame).health == voltHealthBefore - inferno.damage &&
+                         Volt(hitGame).hitStunFrames == inferno.hitStunFrames &&
+                         Volt(hitGame).velocity.x < 0.0F,
+                     "left-facing Inferno Burst deals damage, stun, and stronger knockback");
+    const int healthAfterHit = Volt(hitGame).health;
+    AdvanceEmpty(hitGame, inferno.activeFrames + 2);
+    passed &= Expect(Volt(hitGame).health == healthAfterHit,
+                     "Inferno Burst connects only once during its active duration");
+
+    arena::Fighter rightFacing = Ember(hitGame);
+    rightFacing.facing = arena::FacingDirection::Right;
+    const arena::Rectanglef leftBox = arena::GetAttackHitbox(
+        Ember(hitGame), inferno);
+    const arena::Rectanglef rightBox = arena::GetAttackHitbox(rightFacing, inferno);
+    passed &= Expect(leftBox.x + leftBox.width <= Ember(hitGame).position.x + 16.0F &&
+                         rightBox.x >= rightFacing.position.x - 16.0F,
+                     "Inferno Burst hitbox mirrors with fighter facing");
+
+    arena::Game missGame;
+    missGame.initialize();
+    EarnEnergy(missGame, 1, 25);
+    arena::FrameCommands separate;
+    separate.fighters[0].moveLeftHeld = true;
+    separate.fighters[1].moveRightHeld = true;
+    for (int tick = 0; tick < 45; ++tick) {
+        missGame.advanceSimulation(separate);
+    }
+    AdvanceUntilBothAvailable(missGame);
+    const int healthBeforeMiss = Volt(missGame).health;
+    PressSpecial(missGame, 1);
+    AdvanceEmpty(missGame, inferno.startupFrames + inferno.activeFrames);
+    passed &= Expect(Volt(missGame).health == healthBeforeMiss,
+                     "Inferno Burst misses outside its short facing-aware range");
+
+    arena::Game blockGame;
+    blockGame.initialize();
+    EarnEnergy(blockGame, 1, 25);
+    ApproachToBodyContact(blockGame);
+    const int healthBeforeBlock = Volt(blockGame).health;
+    arena::FrameCommands startBlockedBurst;
+    startBlockedBurst.fighters[0].blockHeld = true;
+    startBlockedBurst.fighters[1].specialAttackPressed = true;
+    blockGame.advanceSimulation(startBlockedBurst);
+    arena::FrameCommands holdBlock;
+    holdBlock.fighters[0].blockHeld = true;
+    for (int tick = 0; tick < inferno.startupFrames; ++tick) {
+        blockGame.advanceSimulation(holdBlock);
+    }
+    passed &= Expect(Volt(blockGame).health == healthBeforeBlock &&
+                         Volt(blockGame).blockFlashFrames > 0,
+                     "grounded facing block prevents Inferno Burst damage");
+    return passed;
+}
+
+bool TestSpecialTradeAndKo() {
+    arena::Game tradeGame;
+    tradeGame.initialize();
+    EarnEnergy(tradeGame, 1, 25);
+    ApproachToBodyContact(tradeGame);
+    const int voltHealthBeforeTrade = Volt(tradeGame).health;
+    const int emberHealthBeforeTrade = Ember(tradeGame).health;
+    PressSpecial(tradeGame, 1);
+    AdvanceEmpty(tradeGame, 10);
+    arena::FrameCommands light;
+    light.fighters[0].lightAttackPressed = true;
+    tradeGame.advanceSimulation(light);
+    AdvanceEmpty(tradeGame, 5);
+
+    bool passed = true;
+    passed &= Expect(Volt(tradeGame).combatState == arena::CombatState::HitStun &&
+                         Ember(tradeGame).combatState == arena::CombatState::HitStun,
+                     "same-tick normal and Inferno Burst contacts both resolve as a trade");
+    passed &= Expect(Volt(tradeGame).health == voltHealthBeforeTrade - 20 &&
+                         Ember(tradeGame).health == emberHealthBeforeTrade - 6,
+                     "trade applies both special and normal damage from the snapshot");
+
+    arena::Game koGame;
+    koGame.initialize();
+    EarnEnergy(koGame, 1, 72);
+    ApproachToBodyContact(koGame);
+    const int healthBeforeSpecial = Volt(koGame).health;
+    PressSpecial(koGame, 1);
+    AdvanceEmpty(koGame,
+                 arena::GetMoveDefinition(arena::MoveId::InfernoBurst).startupFrames);
+    passed &= Expect(healthBeforeSpecial <= 20 && Volt(koGame).health == 0 &&
+                         Volt(koGame).combatState == arena::CombatState::KnockedOut,
+                     "Inferno Burst can clamp health to zero and cause KO");
+    return passed;
+}
+
 bool TestHealthClampKoAndKoLockout() {
     arena::Game game;
     game.initialize();
@@ -744,8 +1222,37 @@ bool FightersEqual(const arena::Fighter& first, const arena::Fighter& second) {
            first.chargeFrames == second.chargeFrames &&
            first.chargeReleaseOutcome == second.chargeReleaseOutcome &&
            first.attackHasConnected == second.attackHasConnected &&
+           first.moveEffectCreated == second.moveEffectCreated &&
            first.hitFlashFrames == second.hitFlashFrames &&
-           first.blockFlashFrames == second.blockFlashFrames;
+           first.blockFlashFrames == second.blockFlashFrames &&
+           first.specialImpactMove == second.specialImpactMove &&
+           first.specialImpactFrames == second.specialImpactFrames;
+}
+
+bool ProjectilesEqual(const arena::Projectile& first, const arena::Projectile& second) {
+    return first.active == second.active && first.owner == second.owner &&
+           first.sourceMove == second.sourceMove && first.position.x == second.position.x &&
+           first.position.y == second.position.y && first.velocity.x == second.velocity.x &&
+           first.velocity.y == second.velocity.y && first.direction == second.direction &&
+           first.remainingLifetimeFrames == second.remainingLifetimeFrames &&
+           first.hitbox.x == second.hitbox.x && first.hitbox.y == second.hitbox.y &&
+           first.hitbox.width == second.hitbox.width &&
+           first.hitbox.height == second.hitbox.height;
+}
+
+bool CompleteStatesEqual(const arena::Game& first, const arena::Game& second) {
+    if (!FightersEqual(Volt(first), Volt(second)) ||
+        !FightersEqual(Ember(first), Ember(second)) ||
+        first.state().simulationFrame != second.state().simulationFrame) {
+        return false;
+    }
+    for (std::size_t index = 0; index < first.state().projectiles.size(); ++index) {
+        if (!ProjectilesEqual(first.state().projectiles[index],
+                              second.state().projectiles[index])) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool TestFixedTickReplayConsistency() {
@@ -793,6 +1300,52 @@ bool TestFixedTickReplayConsistency() {
     return passed;
 }
 
+bool TestSpecialReplayConsistency() {
+    arena::Game first;
+    arena::Game second;
+    first.initialize();
+    second.initialize();
+    EarnEnergy(first, 0, 25);
+    EarnEnergy(first, 1, 25);
+    EarnEnergy(second, 0, 25);
+    EarnEnergy(second, 1, 25);
+
+    arena::FrameCommands separate;
+    separate.fighters[0].moveLeftHeld = true;
+    separate.fighters[1].moveRightHeld = true;
+    for (int tick = 0; tick < 40; ++tick) {
+        first.advanceSimulation(separate);
+        second.advanceSimulation(separate);
+    }
+
+    bool passed = true;
+    for (int tick = 0; tick < 140; ++tick) {
+        arena::FrameCommands commands;
+        commands.fighters[0].specialAttackPressed = tick == 0;
+        commands.fighters[0].specialAttackHeld = tick >= 0 && tick < 4;
+        commands.fighters[0].specialAttackReleased = tick == 4;
+        commands.fighters[1].specialAttackPressed = tick == 0;
+        commands.fighters[1].specialAttackHeld = tick >= 0 && tick < 4;
+        commands.fighters[1].specialAttackReleased = tick == 4;
+        commands.fighters[1].blockHeld = tick >= 45 && tick < 100;
+
+        first.advanceSimulation(commands);
+        second.advanceSimulation(commands);
+        passed &= Expect(CompleteStatesEqual(first, second),
+                         "special replay reproduces fighter and projectile state each tick");
+        if (!passed) {
+            return false;
+        }
+        if (tick == 0) {
+            passed &= Expect(Volt(first).currentMove == arena::MoveId::ThunderBolt &&
+                                 Ember(first).currentMove == arena::MoveId::InfernoBurst &&
+                                 Volt(first).energy == 11 && Ember(first).energy == 11,
+                             "simultaneous specials both activate and spend without bias");
+        }
+    }
+    return passed;
+}
+
 }  // namespace
 
 int main() {
@@ -819,7 +1372,15 @@ int main() {
     passed &= TestFrameCommandEdgeBuffer();
     passed &= TestChargeThresholdsAndMaximum();
     passed &= TestChargeInterruptionAndCombatLockouts();
+    passed &= TestSpecialActivationEnergyAndLifecycle();
+    passed &= TestSpecialSpendingLockoutsAndInterruption();
+    passed &= TestThunderBoltProjectileStateAndDamage();
+    passed &= TestThunderBoltBlockingAndLifetime();
+    passed &= TestProjectilePersistsAfterOwnerHit();
+    passed &= TestInfernoBurstHitMissAndFacing();
+    passed &= TestSpecialTradeAndKo();
     passed &= TestHealthClampKoAndKoLockout();
     passed &= TestFixedTickReplayConsistency();
+    passed &= TestSpecialReplayConsistency();
     return passed ? 0 : 1;
 }
