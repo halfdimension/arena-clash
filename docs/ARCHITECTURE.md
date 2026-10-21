@@ -129,13 +129,15 @@ Each melee activation tracks whether it already connected. A hit or blocked cont
 
 ## Renderer and audio
 
-**Renderer implemented:** `GameRenderer` translates read-only `GameState` into raylib draw calls, owns a 1280×720 render texture, and owns one neutral `Texture2D` for each fighter. Sprite definitions currently contain only a texture-space ground pivot and uniform scale. Body selection is fighter-driven, leaving a small seam where later state/clip selection can replace `neutral.png` without entering simulation code. Textures load once after graphics initialization and valid GPU handles unload with the renderer.
+**Renderer implemented:** `GameRenderer` translates read-only `GameState` into raylib draw calls, owns a 1280×720 render texture, and owns one neutral `Texture2D` for each fighter. Sprite definitions contain a texture-space ground pivot and uniform base scale. Body selection is fighter-driven, leaving a small seam where later state/clip selection can replace `neutral.png` without entering simulation code. Textures load once after graphics initialization and valid GPU handles unload with the renderer.
+
+Phase 2B-A adds a transient `SpritePresentationTransform` calculated during drawing. A fighter breathes only while `Available`, grounded, and effectively stationary. The transform reads `GameState::simulationFrame` to generate a three-second sine wave, applies at most +/−0.6% vertical and +/−0.3% inverse horizontal scale, and gives the two fighters a quarter-cycle phase offset. Destination dimensions and the texture-space origin use the same axis scales, preserving the exact bottom-center world anchor through breathing and mirroring. Every other state uses identity scale. No presentation phase, timer, or transform is stored in `Fighter` or other authoritative state.
 
 Rendering is layered as arena, fighter backdrop effects, large special fields, fighter bodies, fighter feedback, projectiles, optional `F1` boxes, and HUD. This prevents the static sprite replacement from hiding charge, guard, hit/impact, projectile, KO, or debug presentation. If a texture is missing or invalid, only that fighter body returns to the prior procedural renderer. Core state contains no raylib types, and rendering does not mutate it.
 
 **Audio proposed:** No audio resources or presentation layer exist yet. A later audio layer should consume events and own sound/music resources without changing simulation outcomes.
 
-The Phase 2A bodies are static neutral sprites, not animation. Art dimensions do not define gameplay collision geometry; the 64×112 simulation body and all combat boxes remain unchanged.
+The Phase 2A bodies remain single neutral sprites. Phase 2B-A only deforms those complete images subtly; it is not skeletal or frame-by-frame animation. Art dimensions and presentation transforms do not define gameplay collision geometry; the 64×112 simulation body and all combat boxes remain unchanged.
 
 ## Assets
 

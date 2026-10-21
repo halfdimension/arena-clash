@@ -1,8 +1,8 @@
 # Project Status
 
-**Current phase:** Phase 2A — First character sprite integration (complete)
+**Current phase:** Phase 2B-A — Procedural idle animation prototype (complete)
 
-**Phase state:** Static neutral sprites are integrated and verified in Linux builds and a Chrome/WebAssembly runtime; full character animation is not implemented, and parent Phase 1D still lacks ultimates
+**Phase state:** Static neutral sprites and renderer-only idle breathing are verified in Linux builds and a Chrome/WebAssembly runtime; frame-based/skeletal animation is not implemented, and parent Phase 1D still lacks ultimates
 
 **Last updated:** 2026-10-21
 
@@ -22,6 +22,8 @@ This file is the source of truth for the current verified state. Roadmap and gam
 - `GameRenderer` loads one RGBA neutral texture for each fighter, draws it from character-specific bottom-center artwork pivots, mirrors it without moving that pivot, and falls back to the procedural body if an asset cannot be loaded.
 - Fighter shadows and large special fields render behind the body; block, charge, attack, hit/impact, projectile, KO, debug, and HUD presentation remain separate from the sprite body. The same static neutral art is intentionally used for every combat state in this prototype.
 - Native builds copy `assets/characters/` beside the executable. Emscripten packages that directory into `arena-clash.data` at `/assets/characters` without embedding image bytes in C++.
+- Grounded, stationary fighters in `Available` state use a presentation-only three-second sine cycle: vertical scale varies by at most 0.6% and horizontal scale varies inversely by at most 0.3%. Both the image and its existing pivot are scaled together, so the world-space ground anchor remains fixed.
+- VOLT and EMBER use quarter-cycle-separated breathing phases. Movement, jumping, block, attacks, charge, hit-stun, and KO all select the identity transform; no animation counter or transform is stored in authoritative state.
 
 ## Verified functionality
 
@@ -30,6 +32,7 @@ This file is the source of truth for the current verified state. Roadmap and gam
 - `cmake --build build/web --parallel` completed with Emscripten 6.0.12, including the shared match simulation and renderer.
 - The generated browser package contains `/assets/characters/volt/neutral.png` and `/assets/characters/ember/neutral.png`; Chrome loaded both textures from it without a fallback warning.
 - Automated Chrome 153 screenshots verified both fighters at their expected starting anchors, undistorted alpha compositing, VOLT facing right, mirrored EMBER facing left, matched visual height and foot alignment, stable sprite/ground alignment during a jump, charging and blocking overlays, unobstructed HUD/control text, and unchanged `F1` hurtboxes.
+- Twelve Chrome 153/WebAssembly idle samples measured subtle top-edge movement (three pixels for both fighters in the captured viewport) while the detected VOLT and EMBER foot rows remained fixed at y=449 and y=446. Separate captures verified that charging and jumping suppress the breathing transform.
 - Headless coverage verifies exact timer duration/gating, timeout outcomes, timer clamping, single and simultaneous KO, KO-at-timeout precedence, score-once behavior, draws, both fighters winning, one win each, first-to-two, complete round reset, projectile clearing, stale-edge rejection, frozen match over, restart, and complete-state replay through match over/rematch.
 - An automated Chrome 153/WebAssembly playthrough visually verified Round 1 countdown, the active timer, charged attack effects, KO, VOLT's win pip/result, round reset, Round 2, a 2–0 match victory panel, and `R` rematch to a clean Round 1. WebGL returned error state 0; HTML/JavaScript/Wasm returned HTTP 200/304.
 - Phase 1D-C charged effects were exercised during that browser playthrough, completing their previously missing runtime visual check.
@@ -46,7 +49,8 @@ This file is the source of truth for the current verified state. Roadmap and gam
 ## Known issues and limitations
 
 - Ultimate abilities remain unimplemented, so parent Phase 1D is still in progress despite Phase 1E being complete.
-- Character animation, pause, audio, AI, networking, replay storage, and general state serialization remain unimplemented.
+- Authored frame-based or skeletal character animation, pause, audio, AI, networking, replay storage, and general state serialization remain unimplemented.
+- Idle breathing deforms the complete neutral image by a very small amount. It does not articulate the chest or limbs, blend poses, or provide state-specific artwork.
 - At minimum gameplay-body spacing, the broad neutral illustrations overlap visually because the required 64-unit simulation collision bodies were not changed. State-specific action art should reduce that issue in the animation milestone.
 - The projectile pool has eight fixed slots and does not present a warning if exhausted.
 - If several simultaneous hits apply different stun/knockback values to one defender, stable contact-array order determines the final stun/velocity while all damage still applies.
@@ -54,4 +58,4 @@ This file is the source of truth for the current verified state. Roadmap and gam
 
 ## Next recommended task
 
-Define a minimal Phase 2B state-driven sprite set and clip metadata for idle, walk, jump, block, attack, hit, and KO, keeping frame selection presentation-only and using the validated per-character ground pivots. Phase 1D-D ultimate abilities also remain outstanding gameplay work.
+Define Phase 2B-B's minimal presentation-owned clip metadata and integrate a consistently authored multi-frame idle clip before extending the same selection seam to walk, jump, block, attack, hit, and KO. Frame selection must remain read-only and must not define combat timing. Phase 1D-D ultimate abilities also remain outstanding gameplay work.

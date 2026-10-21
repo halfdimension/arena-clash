@@ -6,6 +6,19 @@ The format is inspired by Keep a Changelog. The project does not yet have a rele
 
 ## Unreleased
 
+### Added — 2026-10-21 (Phase 2B-A procedural idle animation)
+
+- Added a renderer-only three-second sine breathing cycle for grounded, stationary fighters in `Available` state, reusing the approved neutral PNGs without changing simulation state.
+- Limited the transform to +/−0.6% vertical scale and inverse +/−0.3% horizontal scale, with a quarter-cycle character phase offset.
+- Applied the same axis scales to destination dimensions and the mirrored texture origin so each existing world-space ground pivot remains fixed.
+- Kept movement, airborne, blocking, attacking, charging, hit-stun, and KO presentation at the exact Phase 2A scale; procedural body fallbacks remain unchanged.
+
+### Verified — 2026-10-21 (Phase 2B-A procedural idle animation)
+
+- Built the GNU/Linux desktop and Emscripten 6.0.12 application targets and retained passing isolated/desktop core regression suites.
+- Inspected twelve Chrome 153/WebAssembly idle captures: the detected top edge moved by three pixels for each fighter while VOLT and EMBER foot rows stayed fixed at y=449 and y=446 in every sample.
+- Captured charging and jumping states with breathing disabled. Native runtime presentation remains unverified because GLFW cannot open the available X11 display.
+
 ### Added — 2026-10-21 (Phase 2A static character sprites)
 
 - Replaced successful VOLT and EMBER body draws with their original RGBA neutral PNG textures while retaining the procedural bodies as per-fighter load-failure fallbacks.

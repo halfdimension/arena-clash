@@ -18,6 +18,10 @@ constexpr Color kEmber = {255, 92, 56, 255};
 constexpr Color kEmberGlow = {255, 190, 67, 255};
 constexpr const char* kVoltNeutralTexturePath = "assets/characters/volt/neutral.png";
 constexpr const char* kEmberNeutralTexturePath = "assets/characters/ember/neutral.png";
+constexpr std::uint64_t kIdleBreathingCycleFrames = 180;
+constexpr float kTau = 6.28318530717958647692F;
+constexpr float kIdleBreathingHorizontalScale = 0.003F;
+constexpr float kIdleBreathingVerticalScale = 0.006F;
 
 struct FighterSpriteDefinition {
     Vector2 pivotPixels;
@@ -33,6 +37,11 @@ struct FighterPose {
     float facing;
     Vector2 rearHand;
     Vector2 frontHand;
+};
+
+struct SpritePresentationTransform {
+    float scaleX = 1.0F;
+    float scaleY = 1.0F;
 };
 
 Texture2D LoadCharacterTexture(const char* relativePath) {
@@ -221,24 +230,54 @@ void DrawProceduralFighterBody(const Fighter& fighter, const FighterPose& pose) 
     }
 }
 
+SpritePresentationTransform GetSpritePresentationTransform(
+    const Fighter& fighter, std::uint64_t simulationFrame) {
+    constexpr float kIdleVelocityThreshold = 0.01F;
+    const bool idle = fighter.combatState == CombatState::Available && fighter.grounded &&
+                      std::fabs(fighter.velocity.x) < kIdleVelocityThreshold &&
+                      std::fabs(fighter.velocity.y) < kIdleVelocityThreshold;
+    if (!idle) {
+        return {};
+    }
+
+    const std::uint64_t phaseOffset =
+        fighter.id == FighterId::Volt ? 0 : kIdleBreathingCycleFrames / 4;
+    const float phase = static_cast<float>(
+                            (simulationFrame % kIdleBreathingCycleFrames + phaseOffset) %
+                            kIdleBreathingCycleFrames) *
+                        kTau / static_cast<float>(kIdleBreathingCycleFrames);
+    const float breath = std::sin(phase);
+    return {
+        1.0F - breath * kIdleBreathingHorizontalScale,
+        1.0F + breath * kIdleBreathingVerticalScale,
+    };
+}
+
 void DrawSpriteFighterBody(const Fighter& fighter, const Texture2D& texture,
-                           const FighterSpriteDefinition& sprite) {
+                           const FighterSpriteDefinition& sprite,
+                           std::uint64_t simulationFrame) {
     const bool facingRight = fighter.facing == FacingDirection::Right;
     const float width = static_cast<float>(texture.width);
     const float height = static_cast<float>(texture.height);
+    const SpritePresentationTransform transform =
+        GetSpritePresentationTransform(fighter, simulationFrame);
+    const float scaleX = sprite.scale * transform.scaleX;
+    const float scaleY = sprite.scale * transform.scaleY;
     const Rectangle source = {0.0F, 0.0F, facingRight ? width : -width, height};
     const Rectangle destination = {fighter.position.x, fighter.position.y,
-                                   width * sprite.scale, height * sprite.scale};
+                                   width * scaleX, height * scaleY};
     const float pivotX = facingRight ? sprite.pivotPixels.x : width - sprite.pivotPixels.x;
-    const Vector2 origin = {pivotX * sprite.scale, sprite.pivotPixels.y * sprite.scale};
+    // Scaling the origin with the image keeps the artwork pivot on the world anchor.
+    const Vector2 origin = {pivotX * scaleX, sprite.pivotPixels.y * scaleY};
     DrawTexturePro(texture, source, destination, origin, 0.0F, WHITE);
 }
 
 void DrawFighterBody(const Fighter& fighter, const Texture2D& texture,
-                     const FighterSpriteDefinition& sprite) {
+                     const FighterSpriteDefinition& sprite,
+                     std::uint64_t simulationFrame) {
     const FighterPose pose = GetFighterPose(fighter);
     if (IsTextureValid(texture)) {
-        DrawSpriteFighterBody(fighter, texture, sprite);
+        DrawSpriteFighterBody(fighter, texture, sprite, simulationFrame);
         return;
     }
 
@@ -616,7 +655,8 @@ void GameRenderer::draw(const GameState& state, const char* platformName, int fr
         const bool isVolt = fighter.id == FighterId::Volt;
         DrawFighterBody(fighter,
                         isVolt ? voltNeutralTexture_ : emberNeutralTexture_,
-                        isVolt ? kVoltNeutralSprite : kEmberNeutralSprite);
+                        isVolt ? kVoltNeutralSprite : kEmberNeutralSprite,
+                        state.simulationFrame);
     }
     DrawFighterFeedbackEffects(state.fighters[0]);
     DrawFighterFeedbackEffects(state.fighters[1]);

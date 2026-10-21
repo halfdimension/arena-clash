@@ -2,7 +2,7 @@
 
 > An original 2D one-on-one fighting game built for responsive local play, portable native builds, and a future rollback-ready online mode.
 
-**Project status:** Phase 2A static character-sprite integration is complete. ARENA CLASH runs first-to-two local matches with fixed-tick round flow, scoring, reset, victory, and rematch. VOLT and EMBER now use original static neutral PNG art while animation remains future work. Parent Phase 1D still lacks ultimate abilities. Linux builds/tests and the Chrome/WebAssembly sprite runtime are verified, while the current native runtime could not access an X11 display.
+**Project status:** Phase 2B-A procedural idle animation is complete. ARENA CLASH runs first-to-two local matches with fixed-tick round flow, scoring, reset, victory, and rematch. VOLT and EMBER reuse their approved neutral PNGs with a subtle renderer-only breathing transform while grounded and idle. True frame-based or skeletal animation remains future work, and parent Phase 1D still lacks ultimate abilities. Linux builds/tests and the Chrome/WebAssembly sprite runtime are verified, while the current native runtime could not access an X11 display.
 
 ## Current implementation
 
@@ -23,6 +23,7 @@
 - First-to-two scoring, replayed unscored draws, complete round resets, match victory, and `R`/Enter rematch
 - 1280×720 logical render target with aspect-preserving window scaling
 - Original static neutral sprites for VOLT and EMBER, with character-calibrated ground pivots, aspect-preserving scale, facing mirroring, and procedural fallback
+- Presentation-only idle breathing from a small three-second scale cycle that preserves the ground pivot and disables during movement, airborne, defensive, attack, charge, hit-stun, and KO states
 - Primitive-rendered arena and combat effects, health/energy, timer, round score, countdown/results, match winner/rematch UI, control help, and optional `F1` debug boxes
 - Headless movement/combat/energy/charge/projectile/match timing, outcome, reset, edge-buffer, lockout, interaction, and same-build replay tests
 - CMake FetchContent dependency on the official raylib 6.2 tag archive, verified by SHA-256
@@ -94,7 +95,7 @@ The script configures `build/web`, builds `arena-clash.html` plus its JavaScript
 PORT=8000 ./scripts/run-web.sh
 ```
 
-This path is verified with Emscripten 6.0.12 and automated Google Chrome 153 testing on Linux. The current sprite runtime loaded both packaged PNGs and visually exercised grounded placement, transparency, inward mirroring, jumping, charge/block feedback, the HUD, and `F1` hurtboxes. The earlier complete-match runtime check covered countdown/timer, KO/result/score, round reset, match victory, and rematch; those short-lived combat effects were not all recaptured in the Phase 2A run.
+This path is verified with Emscripten 6.0.12 and automated Google Chrome 153 testing on Linux. The current sprite runtime loaded both packaged PNGs and exercised grounded placement, transparency, inward mirroring, subtle idle breathing, a stable foot row, jump/charge animation exclusion, charge/block feedback, the HUD, and `F1` hurtboxes. The earlier complete-match runtime check covered countdown/timer, KO/result/score, round reset, match victory, and rematch; those short-lived combat effects were not all recaptured in the Phase 2A or 2B-A runs.
 
 ## Core tests
 
@@ -128,6 +129,7 @@ See [Architecture](docs/ARCHITECTURE.md), [Game Design](docs/GAME_DESIGN.md), [D
 | 1D-D | Ultimate abilities | Planned — remaining parent Phase 1D scope |
 | 1E | Complete local matches | Complete — Linux tests/builds and browser runtime verified |
 | 2A | Static character-sprite integration | Complete — Linux builds and browser runtime verified |
+| 2B-A | Procedural idle animation prototype | Complete — Linux builds and browser runtime verified |
 | 2 | Animation and remaining visual polish | In progress |
 | 3 | Additional gameplay and AI | Planned |
 | 4 | Online multiplayer | Planned |
