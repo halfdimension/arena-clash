@@ -6,6 +6,21 @@ The format is inspired by Keep a Changelog. The project does not yet have a rele
 
 ## Unreleased
 
+### Added — 2026-10-21 (Phase 2B-B sprite animation infrastructure)
+
+- Added raylib-free clip definitions and fixed-tick sampling for idle, walking, jumping, blocking, light/heavy attacks, hit reaction, charging, fighter-specific special/charged attacks, and KO.
+- Added ordered per-frame PNG paths, durations, dimensions, ground pivots, looping/one-shot behavior, presentation playback reset/advance, and startup/active/recovery phase-constrained attack sampling.
+- Replaced the two-texture renderer path with renderer-owned per-fighter texture caches and frame bindings; missing, invalid, or dimension-mismatched authored frames use the approved neutral texture and metadata, while neutral failure retains the procedural fallback.
+- Kept breathing, facing-safe mirroring, calibrated ground anchors, gameplay state/timing, and combat/effect layering unchanged. No production animation artwork was added.
+- Made all character PNGs native build dependencies while retaining directory copying and complete Emscripten character-tree preloading.
+
+### Verified — 2026-10-21 (Phase 2B-B sprite animation infrastructure)
+
+- Passed both the existing core regression executable and new animation executable in isolated and desktop CTest trees (2 of 2 each).
+- Verified exact frame-duration boundaries, looping, one-shot completion, playback resets, missing-frame fallback, facing/pivot geometry, all requested state mappings, and live light-attack phase synchronization without changing combat lifecycle.
+- Built the GNU/Linux raylib application and Emscripten 6.0.12 output. Chrome 153 loaded HTML/JavaScript/Wasm/data with HTTP 200 and rendered both neutral fallbacks at their preserved anchors; only the known favicon 404 appeared.
+- Native runtime rendering remains unverified because GLFW cannot open X11 display `:0`. No authored walking or attack animation is claimed complete.
+
 ### Added — 2026-10-21 (Phase 2B-A procedural idle animation)
 
 - Added a renderer-only three-second sine breathing cycle for grounded, stationary fighters in `Available` state, reusing the approved neutral PNGs without changing simulation state.

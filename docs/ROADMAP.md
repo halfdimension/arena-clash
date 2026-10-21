@@ -171,7 +171,7 @@ Pause and audio were not part of the implemented Phase 1E assignment and remain 
 
 ## Phase 2 — Animations and visual polish
 
-**Status:** In progress. Phase 2A static neutral-sprite integration and Phase 2B-A procedural idle breathing are complete and browser-verified; authored state-driven animation, arena polish, audio, accessibility, and profiling remain planned.
+**Status:** In progress. Phase 2A static neutral-sprite integration, Phase 2B-A procedural idle breathing, and Phase 2B-B sprite-animation infrastructure are complete and browser-verified; authored frame sequences, arena polish, audio, accessibility, and profiling remain planned.
 
 **Objectives**
 
@@ -195,13 +195,19 @@ Pause and audio were not part of the implemented Phase 1E assignment and remain 
 
 **Status:** Complete. VOLT and EMBER use original RGBA neutral PNGs with per-character pivots/scales, facing-safe mirroring, procedural fallback, native asset copying, and Emscripten preloading. The browser runtime verified grounded and jumping alignment, transparency, initial facing, charge/block layering, HUD clearance, and `F1` boxes. This milestone does not claim sprite animation or a complete Phase 2 presentation pass.
 
-**Next animation milestone:** Add a minimal presentation-owned clip definition and authored idle, walk, jump, block, attack, hit, and KO frames. Frame selection must observe simulation state without defining attack timing, collision, or movement.
+**Follow-on status:** Phase 2B-B now supplies the presentation-owned clip/state selection seam. Authored state-specific frames remain outstanding.
 
 ### Phase 2B-A — Procedural idle animation prototype
 
 **Status:** Complete. Both fighters reuse their approved `neutral.png` and receive a tiny renderer-only breathing scale while grounded, stationary, and available. The calibrated ground pivot, facing mirroring, procedural fallback, simulation rules, and collision geometry are unchanged. Browser captures verified subtle size variation with fixed foot rows and identity scaling during charge and jump. This is whole-image transformation, not an authored frame sequence or skeletal rig.
 
-**Next animation milestone:** Define Phase 2B-B's minimal clip metadata and validate a consistently aligned multi-frame idle set before adding other combat-state clips.
+### Phase 2B-B — Sprite animation infrastructure
+
+**Status:** Complete. Raylib-free clip metadata and sampling cover idle, walk, jump, block, light/heavy attacks, hit reaction, charge, fighter-specific special/charged attacks, and KO. Ordered frames carry fixed-tick durations, dimensions, per-frame ground pivots, and optional attack-phase tags. Renderer-owned playback, texture caching/unloading, neutral fallback, pivot-safe mirroring, native copying, WebAssembly packaging, and headless regressions are verified.
+
+No authored frame sequence was added in this milestone. Every animation state currently resolves to the approved neutral art, so walking, attack, hit, charge, special, charged, and KO animations are not visually complete.
+
+**Next animation milestone:** Produce and visually verify a consistently aligned multi-frame VOLT idle clip, then repeat the asset/visual-verification process per state. Do not mark an action animation complete solely because its state mapping and fallback path exist.
 
 ## Phase 3 — Additional gameplay and AI
 

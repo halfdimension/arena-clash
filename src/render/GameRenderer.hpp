@@ -2,6 +2,8 @@
 
 #include "raylib.h"
 
+#include <memory>
+
 namespace arena {
 
 struct GameState;
@@ -15,12 +17,13 @@ public:
     GameRenderer& operator=(const GameRenderer&) = delete;
 
     void draw(const GameState& state, const char* platformName, int framesPerSecond,
-              bool drawDebugHitboxes) const;
+              bool drawDebugHitboxes);
 
 private:
+    struct AnimationResources;
+
     RenderTexture2D sceneTarget_{};
-    Texture2D voltNeutralTexture_{};
-    Texture2D emberNeutralTexture_{};
+    std::unique_ptr<AnimationResources> animationResources_;
 };
 
 }  // namespace arena

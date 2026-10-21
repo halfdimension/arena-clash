@@ -2,7 +2,7 @@
 
 ## Status of this document
 
-Sections labeled **Implemented** describe the code through Phase 1E. Movement, combat, energy, character specials, charged attacks, and complete first-to-two local match flow are verified in core tests. The native Linux application and WebAssembly output compile; Chrome runtime verification covers the match flow and charged presentation. The current environment cannot open its X11 display, so this revision's native runtime is unverified. Ultimates, audio, replay storage, and networking remain proposed; Windows and macOS remain untested targets.
+Sections labeled **Implemented** describe the code through Phase 2B-B. Movement, combat, energy, character specials, charged attacks, complete first-to-two local match flow, and presentation-owned sprite-animation infrastructure are verified in automated tests. The native Linux application and WebAssembly output compile; Chrome runtime verification covers the neutral-frame fallback path. The current environment cannot open its X11 display, so this revision's native runtime is unverified. Authored action frames, ultimates, audio, replay storage, and networking remain proposed; Windows and macOS remain untested targets.
 
 ## Design goals
 
@@ -21,9 +21,9 @@ Sections labeled **Implemented** describe the code through Phase 1E. Movement, c
 | `src/game/` | Implemented: composed fighter identity, tuning, position, velocity, collision, grounding, facing, health/energy, combat/charge state, move-effect bookkeeping, and feedback state |
 | `src/combat/` | Implemented: data-backed normal/special/charged definitions, centralized energy/charge rules and special spending, platform-neutral boxes, overlap queries, and guard queries |
 | `src/input/` | Implemented: platform-neutral per-fighter and rematch commands, render-to-tick edge buffering, and raylib keyboard sampling |
-| `src/render/` | Implemented: raylib render-target ownership, state-driven arena/fighters/combat effects, projectile presentation, match HUD/results, debug boxes, and scaling |
+| `src/render/` | Implemented: raylib-free clip/state/frame/pivot selection plus raylib render-target and texture-cache ownership, state-driven arena/fighters/combat effects, projectile presentation, match HUD/results, debug boxes, and scaling |
 | `assets/` | Character, arena, and audio content loaded by presentation systems |
-| `tests/` | Implemented: raylib-free movement/combat/match timing, projectile lifecycle, KO/draw/scoring/reset/rematch, input, and same-build replay regressions |
+| `tests/` | Implemented: raylib-free movement/combat/match timing, projectile lifecycle, KO/draw/scoring/reset/rematch, input, same-build replay, and sprite-animation selection/pivot regressions |
 | `scripts/` | Implemented: desktop and Emscripten configure/build/run helpers |
 
 `src/main.cpp` owns window lifetime, timing accumulation, input sampling coordination, the presentation-only debug-box toggle, and native/browser loop scheduling. Gameplay decisions remain inside the shared core.
@@ -129,25 +129,29 @@ Each melee activation tracks whether it already connected. A hit or blocked cont
 
 ## Renderer and audio
 
-**Renderer implemented:** `GameRenderer` translates read-only `GameState` into raylib draw calls, owns a 1280×720 render texture, and owns one neutral `Texture2D` for each fighter. Sprite definitions contain a texture-space ground pivot and uniform base scale. Body selection is fighter-driven, leaving a small seam where later state/clip selection can replace `neutral.png` without entering simulation code. Textures load once after graphics initialization and valid GPU handles unload with the renderer.
+**Renderer implemented:** `GameRenderer` translates read-only `GameState` into raylib draw calls and owns its 1280×720 render texture, character texture cache, animation playback cursors, and all GPU resource unloading. The separate raylib-free `Animation` module defines ordered clips for idle, walking, jumping, blocking, light/heavy attacks, hit reaction, charging, special/charged attacks, and KO. Each frame declares its PNG path, duration in 60 Hz presentation ticks, dimensions, per-frame ground pivot, and optional attack phase; each clip declares looping or one-shot playback.
+
+State selection reads `Fighter` without mutating it. General playback advances by differences in authoritative `simulationFrame` and resets when the selected clip changes. Attack sampling instead constrains frame choice to the current startup/active/recovery group and reads the phase-local `combatStateFrame`; it cannot delay phase transitions or alter hit timing. The raylib-free `arena_clash_animation` library is separate from `arena_clash_core`, preserving the simulation boundary while allowing headless presentation tests.
+
+At renderer initialization, authored frame paths are resolved relative to the working or application directory. Existing files are loaded once per fighter, checked against their declared dimensions, cached by resolved path, and unloaded with `GameRenderer`. A missing, invalid, or dimension-mismatched authored frame binds to that fighter's `neutral.png` and its calibrated metadata. Only failure of the neutral fallback invokes the procedural body.
 
 Phase 2B-A adds a transient `SpritePresentationTransform` calculated during drawing. A fighter breathes only while `Available`, grounded, and effectively stationary. The transform reads `GameState::simulationFrame` to generate a three-second sine wave, applies at most +/−0.6% vertical and +/−0.3% inverse horizontal scale, and gives the two fighters a quarter-cycle phase offset. Destination dimensions and the texture-space origin use the same axis scales, preserving the exact bottom-center world anchor through breathing and mirroring. Every other state uses identity scale. No presentation phase, timer, or transform is stored in `Fighter` or other authoritative state.
 
-Rendering is layered as arena, fighter backdrop effects, large special fields, fighter bodies, fighter feedback, projectiles, optional `F1` boxes, and HUD. This prevents the static sprite replacement from hiding charge, guard, hit/impact, projectile, KO, or debug presentation. If a texture is missing or invalid, only that fighter body returns to the prior procedural renderer. Core state contains no raylib types, and rendering does not mutate it.
+Rendering remains layered as arena, fighter backdrop effects, large special fields, fighter bodies, fighter feedback, projectiles, optional `F1` boxes, and HUD. This prevents sprite animation from hiding charge, guard, hit/impact, projectile, KO, or debug presentation. Core state contains no raylib types or animation counters, and rendering does not mutate it.
 
 **Audio proposed:** No audio resources or presentation layer exist yet. A later audio layer should consume events and own sound/music resources without changing simulation outcomes.
 
-The Phase 2A bodies remain single neutral sprites. Phase 2B-A only deforms those complete images subtly; it is not skeletal or frame-by-frame animation. Art dimensions and presentation transforms do not define gameplay collision geometry; the 64×112 simulation body and all combat boxes remain unchanged.
+Phase 2B-B supplies frame-sequence infrastructure but no authored sequence assets. Every state therefore resolves to the approved neutral sprite today, and idle retains Phase 2B-A breathing. Art dimensions, pivots, frame durations, and presentation transforms do not define gameplay collision geometry or timing; the 64×112 simulation body, move frames, and all combat boxes remain unchanged.
 
 ## Assets
 
-**Partially implemented:** Authored RGBA PNGs live at `assets/characters/<fighter>/neutral.png`. VOLT uses texture pivot `(708, 1209)` at scale `0.27`; EMBER uses `(704, 1221)` at scale `0.26`. These values were calibrated from each illustration's opaque stance and put both planted-foot anchors on the fighter's world position with similar visible heights. Horizontal mirroring also mirrors the pivot coordinate, so changing facing does not translate the feet. A later lightweight manifest or clip definition may extend this metadata for animation. Arena/audio asset loading and explicit source/license metadata remain future work.
+**Partially implemented:** Approved RGBA fallbacks live at `assets/characters/<fighter>/neutral.png`. Authored clip frames use individual RGBA PNGs under `assets/characters/<fighter>/<clip>/`, with paths and metadata declared in `Animation.cpp`. VOLT currently expects a 1254×1254 artboard, pivot `(708, 1209)`, and scale `0.27`; EMBER expects 1254×1254, pivot `(704, 1221)`, and scale `0.26`. Each future frame may declare a different pivot, but its declared dimensions must match the loaded PNG. Horizontal mirroring uses `width - pivot.x`, so facing changes do not translate the planted point. Arena/audio asset loading and explicit source/license metadata remain future work.
 
 ## Native and WebAssembly builds — Implemented and verified on Linux
 
-CMake defines `arena_clash_core`, `ArenaClash`, and `arena_clash_core_tests`. FetchContent downloads the official raylib 6.2 tag archive and verifies its SHA-256. `ARENA_CLASH_BUILD_APPLICATION=OFF` permits headless core tests without configuring raylib.
+CMake defines `arena_clash_core`, raylib-free `arena_clash_animation`, `ArenaClash`, `arena_clash_core_tests`, and `arena_clash_animation_tests`. FetchContent downloads the official raylib 6.2 tag archive and verifies its SHA-256. `ARENA_CLASH_BUILD_APPLICATION=OFF` permits both headless test executables without configuring raylib.
 
-Native builds use `build/desktop` and copy the character directory beside `ArenaClash`; the renderer also checks its application directory when the process working directory differs. Browser builds use the Emscripten toolchain in `build/web`, set raylib's `PLATFORM` to `Web`, emit `arena-clash.html`, use `web/shell.html`, and preload `assets/characters/` into the virtual filesystem at the same runtime path. Keeping these directories separate prevents incompatible toolchain caches and raylib artifacts from being shared.
+Native builds use `build/desktop` and copy the character directory beside `ArenaClash`; the renderer also checks its application directory when the process working directory differs. Every character PNG is a configured build dependency. Browser builds use the Emscripten toolchain in `build/web`, set raylib's `PLATFORM` to `Web`, emit `arena-clash.html`, use `web/shell.html`, and preload the complete `assets/characters/` tree into the virtual filesystem at the same runtime path. Keeping these directories separate prevents incompatible toolchain caches and raylib artifacts from being shared.
 
 ```mermaid
 flowchart TB
@@ -160,7 +164,7 @@ flowchart TB
     App --> Web
 ```
 
-The Phase 1E core, CTest executable, and native raylib application build on Linux, and both Linux CTest trees pass. The current native runtime launch cannot open X11 display `:0`, so current native visuals and controls are not verified. Emscripten 6.0.12 output builds and completes an automated Chrome 153 two-round match/rematch flow with WebGL error state 0. Windows and macOS remain untested targets.
+The Phase 2B-B core, animation library, two CTest executables, and native raylib application build on Linux, and both Linux CTest trees pass. The current native runtime launch cannot open X11 display `:0`, so current native visuals and controls are not verified. Emscripten 6.0.12 output builds; Chrome 153 loads the HTML, JavaScript, Wasm, and packaged neutral assets and renders the fallback path. Windows and macOS remain untested targets.
 
 ## Future multiplayer integration
 
@@ -173,6 +177,7 @@ Networking will not be embedded in fighter or combat code. Before online play, t
 Phases 1A through 1E establish these validated boundaries:
 
 - `arena_clash_core` contains only standard C++ state, frame commands/buffering, match flow, movement/body collision, combat geometry, energy rules, charge transitions, projectile simulation, and combat resolution.
+- `arena_clash_animation` contains raylib-free presentation metadata and sampling; attack selection reads core phase state but cannot modify it.
 - `KeyboardInput` owns raylib key mapping; `FrameCommandBuffer` owns platform-neutral held/edge lifetime across render and simulation rates.
 - `GameRenderer` owns raylib resources and observes `const GameState&`.
 - `main.cpp` owns platform lifecycle, wall-clock accumulation, and loop registration.

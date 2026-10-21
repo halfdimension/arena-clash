@@ -1,8 +1,8 @@
 # Project Status
 
-**Current phase:** Phase 2B-A — Procedural idle animation prototype (complete)
+**Current phase:** Phase 2B-B — Sprite animation infrastructure (complete)
 
-**Phase state:** Static neutral sprites and renderer-only idle breathing are verified in Linux builds and a Chrome/WebAssembly runtime; frame-based/skeletal animation is not implemented, and parent Phase 1D still lacks ultimates
+**Phase state:** Presentation-owned clip definitions, state selection, fixed-tick playback, combat-phase synchronization, texture fallback/caching, and pivot-safe drawing are implemented and verified; no authored action animation frames exist yet, and parent Phase 1D still lacks ultimates
 
 **Last updated:** 2026-10-21
 
@@ -19,17 +19,22 @@ This file is the source of truth for the current verified state. Roadmap and gam
 - A 180-tick result hold freezes combat. The next round resets health, zero-start energy, position, velocity, facing, attack/charge/stun/feedback state, projectiles, and the timer while preserving scores.
 - Match over freezes combat and exposes the winner in simulation state. Buffered `R` or Enter starts a new match and resets scores and all round state without leaking attack edges.
 - The HUD displays authoritative time, round number, win pips, intro countdown, KO/double-KO/time-over and round-winner messages, plus a match-winner/rematch panel.
-- `GameRenderer` loads one RGBA neutral texture for each fighter, draws it from character-specific bottom-center artwork pivots, mirrors it without moving that pivot, and falls back to the procedural body if an asset cannot be loaded.
+- `src/render/Animation.*` defines presentation-only idle, walk, jump, block, light, heavy, hit-reaction, charge, fighter-specific special, fighter-specific charged, and KO clips. Each ordered frame has a PNG path, fixed-tick duration, dimensions, ground pivot, and optional authoritative attack-phase association; clips are looping or one-shot.
+- Fighter/combat state maps read-only to those animation identifiers. Renderer playback advances from `GameState::simulationFrame`, resets on clip changes, and never enters `Fighter` or changes the fixed-tick simulation.
+- Attack clips contain startup, active, and recovery frame groups. Frame selection is constrained to the fighter's current authoritative `AttackPhase` and phase-local `combatStateFrame`; move definitions remain the source of combat timing.
+- `GameRenderer` resolves each authored frame once, validates its declared dimensions, caches unique textures, unloads them with the renderer, draws each frame from its own bottom-center artwork pivot, and mirrors it without moving that pivot. Missing/invalid authored frames use that fighter's approved `neutral.png`; if the neutral texture also fails, the procedural body remains the final fallback.
 - Fighter shadows and large special fields render behind the body; block, charge, attack, hit/impact, projectile, KO, debug, and HUD presentation remain separate from the sprite body. The same static neutral art is intentionally used for every combat state in this prototype.
-- Native builds copy `assets/characters/` beside the executable. Emscripten packages that directory into `arena-clash.data` at `/assets/characters` without embedding image bytes in C++.
+- Native builds copy `assets/characters/` beside the executable. Emscripten packages that directory into `arena-clash.data` at `/assets/characters` without embedding image bytes in C++; all character PNGs are build dependencies.
 - Grounded, stationary fighters in `Available` state use a presentation-only three-second sine cycle: vertical scale varies by at most 0.6% and horizontal scale varies inversely by at most 0.3%. Both the image and its existing pivot are scaled together, so the world-space ground anchor remains fixed.
 - VOLT and EMBER use quarter-cycle-separated breathing phases. Movement, jumping, block, attacks, charge, hit-stun, and KO all select the identity transform; no animation counter or transform is stored in authoritative state.
 
 ## Verified functionality
 
-- `cmake --build build/tests --parallel` and `ctest --test-dir build/tests --output-on-failure` passed 1 of 1 test executables.
-- `cmake --build build/desktop --parallel` completed the GNU/Linux raylib application, and its CTest run passed 1 of 1 test executables.
+- `cmake --build build/tests --parallel` plus its CTest run and the desktop CTest run pass 2 of 2 executables: the unchanged core regression suite and the new raylib-free animation suite.
+- Animation coverage verifies clip/state definitions, exact per-frame duration boundaries, looping, one-shot final-frame completion, playback reset/advance, missing-frame fallback metadata, mirrored/scaled pivot geometry, all requested state mappings, and light-attack startup/active/recovery synchronization through a real simulation lifecycle.
+- `cmake --build build/desktop --parallel` completed the GNU/Linux raylib application.
 - `cmake --build build/web --parallel` completed with Emscripten 6.0.12, including the shared match simulation and renderer.
+- A Chrome 153/WebAssembly runtime capture loaded the HTML, JavaScript, Wasm, and data package with HTTP 200, displayed both neutral fallbacks at their preserved anchors, and produced no character-resource requests or failures; only the known `favicon.ico` 404 appeared.
 - The generated browser package contains `/assets/characters/volt/neutral.png` and `/assets/characters/ember/neutral.png`; Chrome loaded both textures from it without a fallback warning.
 - Automated Chrome 153 screenshots verified both fighters at their expected starting anchors, undistorted alpha compositing, VOLT facing right, mirrored EMBER facing left, matched visual height and foot alignment, stable sprite/ground alignment during a jump, charging and blocking overlays, unobstructed HUD/control text, and unchanged `F1` hurtboxes.
 - Twelve Chrome 153/WebAssembly idle samples measured subtle top-edge movement (three pixels for both fighters in the captured viewport) while the detected VOLT and EMBER foot rows remained fixed at y=449 and y=446. Separate captures verified that charging and jumping suppress the breathing transform.
@@ -49,7 +54,7 @@ This file is the source of truth for the current verified state. Roadmap and gam
 ## Known issues and limitations
 
 - Ultimate abilities remain unimplemented, so parent Phase 1D is still in progress despite Phase 1E being complete.
-- Authored frame-based or skeletal character animation, pause, audio, AI, networking, replay storage, and general state serialization remain unimplemented.
+- Authored frame sequences remain unavailable, so every newly selectable clip currently displays `neutral.png`; walking, attacks, hit reaction, charging, specials, charged attacks, and KO are infrastructure states, not completed visual animations. Skeletal animation, pause, audio, AI, networking, replay storage, and general state serialization remain unimplemented.
 - Idle breathing deforms the complete neutral image by a very small amount. It does not articulate the chest or limbs, blend poses, or provide state-specific artwork.
 - At minimum gameplay-body spacing, the broad neutral illustrations overlap visually because the required 64-unit simulation collision bodies were not changed. State-specific action art should reduce that issue in the animation milestone.
 - The projectile pool has eight fixed slots and does not present a warning if exhausted.
@@ -58,4 +63,4 @@ This file is the source of truth for the current verified state. Roadmap and gam
 
 ## Next recommended task
 
-Define Phase 2B-B's minimal presentation-owned clip metadata and integrate a consistently authored multi-frame idle clip before extending the same selection seam to walk, jump, block, attack, hit, and KO. Frame selection must remain read-only and must not define combat timing. Phase 1D-D ultimate abilities also remain outstanding gameplay work.
+Author and visually verify VOLT's first real multi-frame idle clip on the existing 1254×1254 artboard, recording a ground pivot for every frame and replacing only the VOLT idle clip's placeholder frame list. Keep combat-state clips on neutral fallback until separately authored and verified. Phase 1D-D ultimate abilities also remain outstanding gameplay work.

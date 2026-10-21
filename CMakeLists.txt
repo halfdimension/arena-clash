@@ -20,10 +20,19 @@ add_library(arena_clash_core STATIC
 target_include_directories(arena_clash_core PUBLIC src)
 target_compile_features(arena_clash_core PUBLIC cxx_std_17)
 
+add_library(arena_clash_animation STATIC
+    src/render/Animation.cpp
+)
+target_include_directories(arena_clash_animation PUBLIC src)
+target_compile_features(arena_clash_animation PUBLIC cxx_std_17)
+target_link_libraries(arena_clash_animation PUBLIC arena_clash_core)
+
 if(MSVC)
     target_compile_options(arena_clash_core PRIVATE /W4 /permissive-)
+    target_compile_options(arena_clash_animation PRIVATE /W4 /permissive-)
 else()
     target_compile_options(arena_clash_core PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(arena_clash_animation PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 if(ARENA_CLASH_BUILD_APPLICATION)
@@ -48,12 +57,11 @@ if(ARENA_CLASH_BUILD_APPLICATION)
         src/input/KeyboardInput.cpp
         src/render/GameRenderer.cpp
     )
-    target_link_libraries(ArenaClash PRIVATE arena_clash_core raylib)
+    target_link_libraries(ArenaClash PRIVATE arena_clash_animation raylib)
     target_include_directories(ArenaClash PRIVATE src)
 
-    set(ARENA_CLASH_CHARACTER_ASSETS
-        "${CMAKE_SOURCE_DIR}/assets/characters/volt/neutral.png"
-        "${CMAKE_SOURCE_DIR}/assets/characters/ember/neutral.png"
+    file(GLOB_RECURSE ARENA_CLASH_CHARACTER_ASSETS CONFIGURE_DEPENDS
+        "${CMAKE_SOURCE_DIR}/assets/characters/*.png"
     )
     set_property(TARGET ArenaClash APPEND PROPERTY LINK_DEPENDS
         ${ARENA_CLASH_CHARACTER_ASSETS}
@@ -91,10 +99,15 @@ include(CTest)
 if(BUILD_TESTING)
     add_executable(arena_clash_core_tests tests/GameTests.cpp)
     target_link_libraries(arena_clash_core_tests PRIVATE arena_clash_core)
+    add_executable(arena_clash_animation_tests tests/AnimationTests.cpp)
+    target_link_libraries(arena_clash_animation_tests PRIVATE arena_clash_animation)
     if(MSVC)
         target_compile_options(arena_clash_core_tests PRIVATE /W4 /permissive-)
+        target_compile_options(arena_clash_animation_tests PRIVATE /W4 /permissive-)
     else()
         target_compile_options(arena_clash_core_tests PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(arena_clash_animation_tests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME core_game_state COMMAND arena_clash_core_tests)
+    add_test(NAME sprite_animation COMMAND arena_clash_animation_tests)
 endif()

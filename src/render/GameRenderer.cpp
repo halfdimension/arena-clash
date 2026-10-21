@@ -1,13 +1,52 @@
 #include "render/GameRenderer.hpp"
 
 #include "core/Game.hpp"
+#include "render/Animation.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace arena {
+
+struct GameRenderer::AnimationResources {
+    struct LoadedFrame {
+        std::size_t textureIndex = std::numeric_limits<std::size_t>::max();
+        AnimationFrameDefinition definition;
+    };
+
+    struct LoadedClip {
+        const AnimationClipDefinition* definition = nullptr;
+        std::vector<LoadedFrame> frames;
+    };
+
+    struct CharacterResources {
+        const FighterAnimationSet* definition = nullptr;
+        std::array<LoadedClip, static_cast<std::size_t>(AnimationId::Count)> clips;
+        std::vector<Texture2D> textures;
+        std::unordered_map<std::string, std::size_t> textureIndexes;
+        AnimationPlaybackState playback;
+    };
+
+    AnimationResources();
+    ~AnimationResources();
+
+    void drawFighterBody(const Fighter& fighter, std::uint64_t simulationFrame);
+
+private:
+    std::array<CharacterResources, 2> characters_;
+
+    static std::size_t loadTexture(CharacterResources& resources,
+                                   const AnimationFrameDefinition& frame,
+                                   bool requiredFallback);
+    static void loadCharacter(CharacterResources& resources, FighterId fighterId);
+};
+
 namespace {
 
 constexpr Color kInk = {12, 14, 25, 255};
@@ -16,20 +55,10 @@ constexpr Color kVolt = {70, 220, 255, 255};
 constexpr Color kVoltGlow = {108, 109, 255, 255};
 constexpr Color kEmber = {255, 92, 56, 255};
 constexpr Color kEmberGlow = {255, 190, 67, 255};
-constexpr const char* kVoltNeutralTexturePath = "assets/characters/volt/neutral.png";
-constexpr const char* kEmberNeutralTexturePath = "assets/characters/ember/neutral.png";
 constexpr std::uint64_t kIdleBreathingCycleFrames = 180;
 constexpr float kTau = 6.28318530717958647692F;
 constexpr float kIdleBreathingHorizontalScale = 0.003F;
 constexpr float kIdleBreathingVerticalScale = 0.006F;
-
-struct FighterSpriteDefinition {
-    Vector2 pivotPixels;
-    float scale;
-};
-
-constexpr FighterSpriteDefinition kVoltNeutralSprite = {{708.0F, 1209.0F}, 0.27F};
-constexpr FighterSpriteDefinition kEmberNeutralSprite = {{704.0F, 1221.0F}, 0.26F};
 
 struct FighterPose {
     float x;
@@ -44,7 +73,7 @@ struct SpritePresentationTransform {
     float scaleY = 1.0F;
 };
 
-Texture2D LoadCharacterTexture(const char* relativePath) {
+std::string ResolveCharacterAssetPath(const std::string& relativePath) {
     std::string resolvedPath = relativePath;
     if (!FileExists(resolvedPath.c_str())) {
         resolvedPath = GetApplicationDirectory();
@@ -54,23 +83,7 @@ Texture2D LoadCharacterTexture(const char* relativePath) {
         resolvedPath += relativePath;
     }
 
-    if (!FileExists(resolvedPath.c_str())) {
-        TraceLog(LOG_WARNING, "RENDERER: Character texture not found: %s; using fallback",
-                 relativePath);
-        return {};
-    }
-
-    Texture2D texture = LoadTexture(resolvedPath.c_str());
-    if (!IsTextureValid(texture)) {
-        TraceLog(LOG_WARNING, "RENDERER: Character texture failed to load: %s; using fallback",
-                 resolvedPath.c_str());
-        return {};
-    }
-
-    SetTextureFilter(texture, TEXTURE_FILTER_BILINEAR);
-    TraceLog(LOG_INFO, "RENDERER: Loaded character texture %s (%dx%d)",
-             resolvedPath.c_str(), texture.width, texture.height);
-    return texture;
+    return FileExists(resolvedPath.c_str()) ? resolvedPath : std::string{};
 }
 
 void DrawCenteredText(const char* text, int centerX, int y, int fontSize, Color color) {
@@ -251,37 +264,6 @@ SpritePresentationTransform GetSpritePresentationTransform(
         1.0F - breath * kIdleBreathingHorizontalScale,
         1.0F + breath * kIdleBreathingVerticalScale,
     };
-}
-
-void DrawSpriteFighterBody(const Fighter& fighter, const Texture2D& texture,
-                           const FighterSpriteDefinition& sprite,
-                           std::uint64_t simulationFrame) {
-    const bool facingRight = fighter.facing == FacingDirection::Right;
-    const float width = static_cast<float>(texture.width);
-    const float height = static_cast<float>(texture.height);
-    const SpritePresentationTransform transform =
-        GetSpritePresentationTransform(fighter, simulationFrame);
-    const float scaleX = sprite.scale * transform.scaleX;
-    const float scaleY = sprite.scale * transform.scaleY;
-    const Rectangle source = {0.0F, 0.0F, facingRight ? width : -width, height};
-    const Rectangle destination = {fighter.position.x, fighter.position.y,
-                                   width * scaleX, height * scaleY};
-    const float pivotX = facingRight ? sprite.pivotPixels.x : width - sprite.pivotPixels.x;
-    // Scaling the origin with the image keeps the artwork pivot on the world anchor.
-    const Vector2 origin = {pivotX * scaleX, sprite.pivotPixels.y * scaleY};
-    DrawTexturePro(texture, source, destination, origin, 0.0F, WHITE);
-}
-
-void DrawFighterBody(const Fighter& fighter, const Texture2D& texture,
-                     const FighterSpriteDefinition& sprite,
-                     std::uint64_t simulationFrame) {
-    const FighterPose pose = GetFighterPose(fighter);
-    if (IsTextureValid(texture)) {
-        DrawSpriteFighterBody(fighter, texture, sprite, simulationFrame);
-        return;
-    }
-
-    DrawProceduralFighterBody(fighter, pose);
 }
 
 void DrawFighterFeedbackEffects(const Fighter& fighter) {
@@ -618,10 +600,123 @@ void DrawHud(const GameState& state, const char* platformName, int framesPerSeco
 
 }  // namespace
 
+std::size_t GameRenderer::AnimationResources::loadTexture(
+    CharacterResources& resources, const AnimationFrameDefinition& frame,
+    bool requiredFallback) {
+    const std::string resolvedPath = ResolveCharacterAssetPath(frame.texturePath);
+    if (resolvedPath.empty()) {
+        if (requiredFallback) {
+            TraceLog(LOG_WARNING,
+                     "RENDERER: Neutral fallback texture not found: %s; using procedural body",
+                     frame.texturePath.c_str());
+        }
+        return std::numeric_limits<std::size_t>::max();
+    }
+
+    const auto cached = resources.textureIndexes.find(resolvedPath);
+    if (cached != resources.textureIndexes.end()) {
+        return cached->second;
+    }
+
+    Texture2D texture = LoadTexture(resolvedPath.c_str());
+    if (!IsTextureValid(texture)) {
+        TraceLog(LOG_WARNING, "RENDERER: Character texture failed to load: %s",
+                 resolvedPath.c_str());
+        return std::numeric_limits<std::size_t>::max();
+    }
+    if (texture.width != frame.widthPixels || texture.height != frame.heightPixels) {
+        TraceLog(LOG_WARNING,
+                 "RENDERER: Character texture %s is %dx%d, expected %dx%d; using fallback",
+                 resolvedPath.c_str(), texture.width, texture.height,
+                 frame.widthPixels, frame.heightPixels);
+        UnloadTexture(texture);
+        return std::numeric_limits<std::size_t>::max();
+    }
+
+    SetTextureFilter(texture, TEXTURE_FILTER_BILINEAR);
+    const std::size_t textureIndex = resources.textures.size();
+    resources.textures.push_back(texture);
+    resources.textureIndexes.emplace(resolvedPath, textureIndex);
+    TraceLog(LOG_INFO, "RENDERER: Loaded character texture %s (%dx%d)",
+             resolvedPath.c_str(), texture.width, texture.height);
+    return textureIndex;
+}
+
+void GameRenderer::AnimationResources::loadCharacter(CharacterResources& resources,
+                                                     FighterId fighterId) {
+    resources.definition = &GetFighterAnimationSet(fighterId);
+    const std::size_t fallbackTextureIndex =
+        loadTexture(resources, resources.definition->fallbackFrame, true);
+
+    for (std::size_t clipIndex = 0; clipIndex < resources.clips.size(); ++clipIndex) {
+        const AnimationClipDefinition& clip = resources.definition->clips[clipIndex];
+        LoadedClip& loadedClip = resources.clips[clipIndex];
+        loadedClip.definition = &clip;
+        loadedClip.frames.reserve(clip.frames.size());
+        for (const AnimationFrameDefinition& frame : clip.frames) {
+            const std::size_t authoredTextureIndex = loadTexture(resources, frame, false);
+            const bool authoredFrameAvailable =
+                authoredTextureIndex != std::numeric_limits<std::size_t>::max();
+            loadedClip.frames.push_back({
+                authoredFrameAvailable ? authoredTextureIndex : fallbackTextureIndex,
+                ResolveAnimationFrame(frame, resources.definition->fallbackFrame,
+                                      authoredFrameAvailable),
+            });
+        }
+    }
+}
+
+GameRenderer::AnimationResources::AnimationResources() {
+    loadCharacter(characters_[0], FighterId::Volt);
+    loadCharacter(characters_[1], FighterId::Ember);
+}
+
+GameRenderer::AnimationResources::~AnimationResources() {
+    for (CharacterResources& character : characters_) {
+        for (const Texture2D& texture : character.textures) {
+            if (IsTextureValid(texture)) {
+                UnloadTexture(texture);
+            }
+        }
+    }
+}
+
+void GameRenderer::AnimationResources::drawFighterBody(
+    const Fighter& fighter, std::uint64_t simulationFrame) {
+    CharacterResources& character =
+        characters_[fighter.id == FighterId::Volt ? 0U : 1U];
+    const AnimationId animationId = SelectFighterAnimation(fighter);
+    UpdateAnimationPlayback(character.playback, animationId, simulationFrame);
+    LoadedClip& clip = character.clips[static_cast<std::size_t>(animationId)];
+    const AnimationFrameSelection selection = SelectFighterAnimationFrame(
+        *clip.definition, fighter, character.playback.elapsedTicks);
+    const LoadedFrame& frame = clip.frames[selection.frameIndex];
+
+    if (frame.textureIndex == std::numeric_limits<std::size_t>::max()) {
+        DrawProceduralFighterBody(fighter, GetFighterPose(fighter));
+        return;
+    }
+
+    const Texture2D& texture = character.textures[frame.textureIndex];
+    const SpritePresentationTransform transform =
+        GetSpritePresentationTransform(fighter, simulationFrame);
+    const float scaleX = character.definition->scale * transform.scaleX;
+    const float scaleY = character.definition->scale * transform.scaleY;
+    const SpriteDrawGeometry geometry = CalculateSpriteDrawGeometry(
+        frame.definition, scaleX, scaleY,
+        fighter.facing == FacingDirection::Right);
+
+    // Scaling the origin with the image keeps every frame's ground pivot on the world anchor.
+    DrawTexturePro(texture,
+                   Rectangle{0.0F, 0.0F, geometry.sourceWidth, geometry.sourceHeight},
+                   Rectangle{fighter.position.x, fighter.position.y,
+                             geometry.destinationWidth, geometry.destinationHeight},
+                   Vector2{geometry.originX, geometry.originY}, 0.0F, WHITE);
+}
+
 GameRenderer::GameRenderer()
     : sceneTarget_(LoadRenderTexture(kLogicalWidth, kLogicalHeight)),
-      voltNeutralTexture_(LoadCharacterTexture(kVoltNeutralTexturePath)),
-      emberNeutralTexture_(LoadCharacterTexture(kEmberNeutralTexturePath)) {
+      animationResources_(std::make_unique<AnimationResources>()) {
     if (!IsRenderTextureValid(sceneTarget_)) {
         TraceLog(LOG_ERROR, "RENDERER: Logical render texture initialization failed");
         return;
@@ -632,19 +727,14 @@ GameRenderer::GameRenderer()
 }
 
 GameRenderer::~GameRenderer() {
-    if (IsTextureValid(emberNeutralTexture_)) {
-        UnloadTexture(emberNeutralTexture_);
-    }
-    if (IsTextureValid(voltNeutralTexture_)) {
-        UnloadTexture(voltNeutralTexture_);
-    }
+    animationResources_.reset();
     if (IsRenderTextureValid(sceneTarget_)) {
         UnloadRenderTexture(sceneTarget_);
     }
 }
 
 void GameRenderer::draw(const GameState& state, const char* platformName, int framesPerSecond,
-                        bool drawDebugHitboxes) const {
+                        bool drawDebugHitboxes) {
     BeginTextureMode(sceneTarget_);
     ClearBackground(kInk);
     DrawArenaBackdrop(state.simulationFrame);
@@ -652,11 +742,7 @@ void GameRenderer::draw(const GameState& state, const char* platformName, int fr
     DrawFighterBackdropEffects(state.fighters[1]);
     DrawSpecialEffectsBehindFighters(state);
     for (const Fighter& fighter : state.fighters) {
-        const bool isVolt = fighter.id == FighterId::Volt;
-        DrawFighterBody(fighter,
-                        isVolt ? voltNeutralTexture_ : emberNeutralTexture_,
-                        isVolt ? kVoltNeutralSprite : kEmberNeutralSprite,
-                        state.simulationFrame);
+        animationResources_->drawFighterBody(fighter, state.simulationFrame);
     }
     DrawFighterFeedbackEffects(state.fighters[0]);
     DrawFighterFeedbackEffects(state.fighters[1]);
