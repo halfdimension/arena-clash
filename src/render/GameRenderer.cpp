@@ -82,7 +82,15 @@ void DrawFighter(const Fighter& fighter) {
         const bool heavy = fighter.currentMove == MoveId::Heavy;
         const bool thunderBolt = fighter.currentMove == MoveId::ThunderBolt;
         const bool infernoBurst = fighter.currentMove == MoveId::InfernoBurst;
-        if ((thunderBolt || infernoBurst) && fighter.attackPhase == AttackPhase::Startup) {
+        const bool chargedMove = IsChargedMove(fighter.currentMove);
+        if (chargedMove && fighter.attackPhase == AttackPhase::Startup) {
+            rearHand = {x - facing * 42.0F, floorY - 68.0F};
+            frontHand = {x - facing * 28.0F, floorY - 126.0F};
+        } else if (chargedMove && fighter.attackPhase == AttackPhase::Active) {
+            rearHand = {x + facing * 52.0F, floorY - 58.0F};
+            frontHand = {x + facing * (isVolt ? 122.0F : 98.0F),
+                         floorY - (isVolt ? 82.0F : 57.0F)};
+        } else if ((thunderBolt || infernoBurst) && fighter.attackPhase == AttackPhase::Startup) {
             rearHand = {x + facing * 30.0F, floorY - 89.0F};
             frontHand = {x + facing * 42.0F, floorY - 89.0F};
         } else if (thunderBolt && fighter.attackPhase == AttackPhase::Active) {
@@ -116,7 +124,11 @@ void DrawFighter(const Fighter& fighter) {
     DrawLineEx(Vector2{x - facing * 12.0F, floorY - 115.0F},
                rearHand, 15.0F, kInk);
     DrawLineEx(Vector2{x + facing * 12.0F, floorY - 112.0F},
-               frontHand, fighter.currentMove == MoveId::Heavy ? 20.0F : 16.0F, primary);
+               frontHand,
+               (fighter.currentMove == MoveId::Heavy || IsChargedMove(fighter.currentMove))
+                   ? 20.0F
+                   : 16.0F,
+               primary);
 
     DrawRectangleRounded(Rectangle{x - 29.0F, floorY - 128.0F, 58.0F, 88.0F},
                          0.25F, 5, kInk);
@@ -149,15 +161,30 @@ void DrawFighter(const Fighter& fighter) {
     if (fighter.combatState == CombatState::Charging) {
         const float chargeRatio = static_cast<float>(fighter.chargeFrames) /
                                   static_cast<float>(GetCombatRules().maximumChargeFrames);
+        const int chargeLevel = GetChargeLevel(fighter.chargeFrames);
         DrawCircleLines(static_cast<int>(x), static_cast<int>(floorY - 91.0F),
                         48.0F + chargeRatio * 28.0F, secondary);
         DrawCircleLines(static_cast<int>(x), static_cast<int>(floorY - 91.0F),
                         55.0F + chargeRatio * 36.0F,
                         Color{secondary.r, secondary.g, secondary.b, 120});
+        if (isVolt) {
+            const float reach = 54.0F + chargeRatio * 32.0F;
+            DrawLineEx(Vector2{x - reach, floorY - 105.0F},
+                       Vector2{x - 18.0F, floorY - 83.0F}, 3.0F + chargeLevel, kVolt);
+            DrawLineEx(Vector2{x + 16.0F, floorY - 102.0F},
+                       Vector2{x + reach, floorY - 76.0F}, 3.0F + chargeLevel, kVoltGlow);
+        } else {
+            const float flameRadius = 12.0F + chargeRatio * 14.0F;
+            DrawCircleGradient(Vector2{x - 43.0F, floorY - 64.0F}, flameRadius,
+                               kEmberGlow, Color{255, 68, 30, 0});
+            DrawCircleGradient(Vector2{x + 43.0F, floorY - 64.0F}, flameRadius,
+                               kEmberGlow, Color{255, 68, 30, 0});
+        }
     }
     if (fighter.combatState == CombatState::Attacking &&
         fighter.attackPhase == AttackPhase::Active) {
-        if (fighter.currentMove != MoveId::InfernoBurst) {
+        if (fighter.currentMove != MoveId::InfernoBurst &&
+            !IsChargedMove(fighter.currentMove)) {
             DrawCircleLines(static_cast<int>(frontHand.x), static_cast<int>(frontHand.y),
                             fighter.currentMove == MoveId::Heavy ? 28.0F : 18.0F,
                             secondary);
@@ -171,9 +198,13 @@ void DrawFighter(const Fighter& fighter) {
                    Vector2{x + 32.0F, floorY - 62.0F}, 4.0F, secondary);
     }
     if (fighter.specialImpactFrames > 0) {
-        const bool electric = fighter.specialImpactMove == MoveId::ThunderBolt;
+        const MoveDefinition& impactMove = GetMoveDefinition(fighter.specialImpactMove);
+        const bool electric = fighter.specialImpactMove == MoveId::ThunderBolt ||
+                              impactMove.owner == MoveOwner::Volt;
         const Color impactColor = electric ? kVolt : kEmberGlow;
-        const float impactRadius = 24.0F + fighter.specialImpactFrames * 4.0F;
+        const float levelScale = 1.0F + 0.18F * GetMoveChargeLevel(fighter.specialImpactMove);
+        const float impactRadius =
+            (24.0F + fighter.specialImpactFrames * 4.0F) * levelScale;
         DrawCircleLines(static_cast<int>(x), static_cast<int>(floorY - 87.0F),
                         impactRadius, impactColor);
         DrawCircleLines(static_cast<int>(x), static_cast<int>(floorY - 87.0F),
@@ -187,6 +218,27 @@ void DrawFighter(const Fighter& fighter) {
 
 void DrawSpecialEffects(const GameState& state) {
     for (const Fighter& fighter : state.fighters) {
+        if (fighter.combatState == CombatState::Attacking &&
+            IsChargedMove(fighter.currentMove) &&
+            fighter.attackPhase == AttackPhase::Active) {
+            const int level = GetMoveChargeLevel(fighter.currentMove);
+            const float direction =
+                fighter.facing == FacingDirection::Right ? 1.0F : -1.0F;
+            const Vector2 start = {fighter.position.x + direction * 18.0F,
+                                   fighter.position.y - 76.0F};
+            const Vector2 end = {fighter.position.x + direction *
+                                     (fighter.id == FighterId::Volt ? 142.0F : 112.0F),
+                                 fighter.position.y -
+                                     (fighter.id == FighterId::Volt ? 93.0F : 58.0F)};
+            const Color outer = fighter.id == FighterId::Volt ? kVolt : kEmber;
+            const Color inner = fighter.id == FighterId::Volt ? kVoltGlow : kEmberGlow;
+            DrawLineEx(start, end, 12.0F + level * 4.0F,
+                       Color{outer.r, outer.g, outer.b, 105});
+            DrawLineEx(start, end, 4.0F + level * 2.0F, inner);
+            DrawCircleGradient(end, 18.0F + level * 8.0F, RAYWHITE,
+                               Color{outer.r, outer.g, outer.b, 15});
+        }
+
         if (fighter.combatState != CombatState::Attacking ||
             fighter.currentMove != MoveId::InfernoBurst ||
             fighter.attackPhase != AttackPhase::Active) {
@@ -295,10 +347,81 @@ void DrawEnergyBar(const Fighter& fighter, int x, bool alignRight) {
     if (fighter.combatState == CombatState::Charging) {
         const int chargePercent = fighter.chargeFrames * 100 /
                                   GetCombatRules().maximumChargeFrames;
-        char chargeText[24];
-        std::snprintf(chargeText, sizeof(chargeText), "CHARGING %d%%", chargePercent);
+        const int chargeLevel = GetChargeLevel(fighter.chargeFrames);
+        char chargeText[32];
+        std::snprintf(chargeText, sizeof(chargeText), "CHARGING LV%d  %d%%", chargeLevel,
+                      chargePercent);
         const int chargeX = alignRight ? x + kBarWidth - MeasureText(chargeText, 16) : x;
         DrawText(chargeText, chargeX, 160, 16, accent);
+    }
+}
+
+void DrawRoundWins(const GameState& state) {
+    for (int winIndex = 0; winIndex < kRoundWinsRequired; ++winIndex) {
+        const bool voltWon = winIndex < state.roundWins[0];
+        const bool emberWon = winIndex < state.roundWins[1];
+        DrawCircle(84 + winIndex * 25, 58, 7.0F,
+                   voltWon ? kVolt : Color{40, 46, 68, 255});
+        DrawCircleLines(84 + winIndex * 25, 58, 7.0F, Color{165, 179, 211, 180});
+        DrawCircle(1196 - winIndex * 25, 58, 7.0F,
+                   emberWon ? kEmber : Color{40, 46, 68, 255});
+        DrawCircleLines(1196 - winIndex * 25, 58, 7.0F, Color{165, 179, 211, 180});
+    }
+}
+
+const char* RoundResultText(RoundResult result) {
+    switch (result) {
+        case RoundResult::VoltWins:
+            return "VOLT WINS THE ROUND";
+        case RoundResult::EmberWins:
+            return "EMBER WINS THE ROUND";
+        case RoundResult::Draw:
+            return "DRAW - ROUND REPLAYED";
+        case RoundResult::None:
+            break;
+    }
+    return "";
+}
+
+void DrawMatchMessages(const GameState& state) {
+    if (state.matchPhase == MatchPhase::RoundIntro) {
+        const int countdown = std::max(
+            1, (state.phaseTicksRemaining + kSimulationRate - 1) / kSimulationRate);
+        char roundText[24];
+        std::snprintf(roundText, sizeof(roundText), "ROUND %d", state.roundNumber);
+        DrawCenteredText(roundText, kLogicalWidth / 2, 205, 42, RAYWHITE);
+        char countdownText[16];
+        std::snprintf(countdownText, sizeof(countdownText), "%d", countdown);
+        DrawCenteredText(countdownText, kLogicalWidth / 2, 260, 82,
+                         Color{255, 232, 145, 255});
+        return;
+    }
+
+    if (state.matchPhase == MatchPhase::RoundOver) {
+        const char* reason = state.roundEndReason == RoundEndReason::DoubleKnockout
+                                 ? "DOUBLE K.O."
+                             : state.roundEndReason == RoundEndReason::TimeOver
+                                 ? "TIME OVER"
+                                 : "K.O.";
+        DrawCenteredText(reason, kLogicalWidth / 2, 190, 68,
+                         Color{255, 232, 145, 255});
+        DrawCenteredText(RoundResultText(state.roundResult), kLogicalWidth / 2, 275, 30,
+                         RAYWHITE);
+        return;
+    }
+
+    if (state.matchPhase == MatchPhase::MatchOver) {
+        DrawRectangleRounded(Rectangle{330.0F, 175.0F, 620.0F, 250.0F}, 0.08F, 8,
+                             Color{5, 7, 18, 235});
+        DrawRectangleLinesEx(Rectangle{330.0F, 175.0F, 620.0F, 250.0F}, 3.0F,
+                             Color{185, 151, 236, 220});
+        DrawCenteredText("MATCH OVER", kLogicalWidth / 2, 205, 34,
+                         Color{222, 213, 240, 255});
+        const bool voltWon = state.matchWinner == RoundResult::VoltWins;
+        DrawCenteredText(voltWon ? "VOLT WINS" : "EMBER WINS", kLogicalWidth / 2,
+                         263, 58, voltWon ? kVolt : kEmberGlow);
+        DrawCenteredText("PRESS R OR ENTER FOR A REMATCH", kLogicalWidth / 2, 352, 22,
+                         RAYWHITE);
     }
 }
 
@@ -307,18 +430,31 @@ void DrawHud(const GameState& state, const char* platformName, int framesPerSeco
     DrawHealthBar(state.fighters[1], 778, true);
     DrawEnergyBar(state.fighters[0], 64, false);
     DrawEnergyBar(state.fighters[1], 778, true);
+    DrawRoundWins(state);
 
     DrawCircle(640, 69, 46.0F, Color{8, 10, 22, 245});
     DrawCircleLines(640, 69, 46.0F, Color{185, 151, 236, 190});
-    DrawCenteredText("ROUND 1", 640, 41, 18, Color{222, 213, 240, 255});
-    DrawCenteredText("99", 640, 62, 30, RAYWHITE);
+    char roundText[24];
+    std::snprintf(roundText, sizeof(roundText), "ROUND %d", state.roundNumber);
+    DrawCenteredText(roundText, 640, 41, 18, Color{222, 213, 240, 255});
+    const int secondsRemaining =
+        (state.roundTimerTicksRemaining + kSimulationRate - 1) / kSimulationRate;
+    char timerText[16];
+    std::snprintf(timerText, sizeof(timerText), "%d", secondsRemaining);
+    DrawCenteredText(timerText, 640, 62, 30, RAYWHITE);
 
     if (state.fighters[0].combatState == CombatState::Attacking &&
         state.fighters[0].currentMove == MoveId::ThunderBolt) {
         DrawCenteredText("THUNDER BOLT", 640, 128, 20, kVolt);
+    } else if (state.fighters[0].combatState == CombatState::Attacking &&
+               IsChargedMove(state.fighters[0].currentMove)) {
+        DrawCenteredText("THUNDER STRIKE", 640, 128, 20, kVolt);
     } else if (state.fighters[1].combatState == CombatState::Attacking &&
                state.fighters[1].currentMove == MoveId::InfernoBurst) {
         DrawCenteredText("INFERNO BURST", 640, 128, 20, kEmberGlow);
+    } else if (state.fighters[1].combatState == CombatState::Attacking &&
+               IsChargedMove(state.fighters[1].currentMove)) {
+        DrawCenteredText("FLAME SMASH", 640, 128, 20, kEmberGlow);
     }
 
     DrawCenteredText("VOLT: A/D MOVE  W JUMP  S BLOCK  F LIGHT  G HEAVY  H SPECIAL  J CHARGE",
@@ -327,10 +463,7 @@ void DrawHud(const GameState& state, const char* platformName, int framesPerSeco
         "EMBER: ARROWS MOVE/JUMP  DOWN BLOCK  K LIGHT  L HEAVY  ; SPECIAL  ' CHARGE  |  F1 BOXES",
         kLogicalWidth / 2, 664, 13, Color{182, 190, 218, 210});
 
-    if (state.fighters[0].combatState == CombatState::KnockedOut ||
-        state.fighters[1].combatState == CombatState::KnockedOut) {
-        DrawCenteredText("K.O.", kLogicalWidth / 2, 135, 72, Color{255, 232, 145, 245});
-    }
+    DrawMatchMessages(state);
 
     char debugLine[128];
     std::snprintf(debugLine, sizeof(debugLine), "60 Hz SIM  |  TICK %llu  |  %d FPS",

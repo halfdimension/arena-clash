@@ -2,7 +2,7 @@
 
 ## Status of this document
 
-Sections labeled **Implemented** describe the code through Phase 1D-B. Movement, basic combat, energy, charge-state foundations, and two character-specific specials are verified in core tests; the current application is built for native Linux and WebAssembly and exercised in Chrome. Charged-hit resolution, ultimates, audio, replay storage, round flow, and networking remain proposed; Windows and macOS remain untested targets.
+Sections labeled **Implemented** describe the code through Phase 1E. Movement, combat, energy, character specials, charged attacks, and complete first-to-two local match flow are verified in core tests. The native Linux application and WebAssembly output compile; Chrome runtime verification covers the match flow and charged presentation. The current environment cannot open its X11 display, so this revision's native runtime is unverified. Ultimates, audio, replay storage, and networking remain proposed; Windows and macOS remain untested targets.
 
 ## Design goals
 
@@ -17,13 +17,13 @@ Sections labeled **Implemented** describe the code through Phase 1D-B. Movement,
 
 | Path | Responsibility |
 | --- | --- |
-| `src/core/` | Implemented: platform-neutral game/projectile state, fixed-tick coordination, movement/physics, body collision, charge transitions, projectile advancement, and simultaneous combat/energy resolution |
-| `src/game/` | Implemented: composed fighter identity, tuning, position, velocity, collision, grounding, facing, health/energy, combat/charge state, timers, move-effect bookkeeping, and feedback state; future match/round state belongs here |
-| `src/combat/` | Implemented: data-backed normal/special definitions, centralized energy/charge rules and special spending, platform-neutral boxes, overlap queries, and guard queries |
-| `src/input/` | Implemented: platform-neutral per-fighter commands and render-to-tick edge buffer plus raylib keyboard sampling |
-| `src/render/` | Implemented: raylib render-target ownership, state-driven arena/fighters/combat/charge/special effects, projectile presentation, health/energy HUD, KO feedback, debug boxes, and scaling |
+| `src/core/` | Implemented: platform-neutral game/projectile/match state, fixed-tick round coordination, movement/physics, body collision, charge/release transitions, projectile advancement, and simultaneous combat/energy resolution |
+| `src/game/` | Implemented: composed fighter identity, tuning, position, velocity, collision, grounding, facing, health/energy, combat/charge state, move-effect bookkeeping, and feedback state |
+| `src/combat/` | Implemented: data-backed normal/special/charged definitions, centralized energy/charge rules and special spending, platform-neutral boxes, overlap queries, and guard queries |
+| `src/input/` | Implemented: platform-neutral per-fighter and rematch commands, render-to-tick edge buffering, and raylib keyboard sampling |
+| `src/render/` | Implemented: raylib render-target ownership, state-driven arena/fighters/combat effects, projectile presentation, match HUD/results, debug boxes, and scaling |
 | `assets/` | Character, arena, and audio content loaded by presentation systems |
-| `tests/` | Implemented: raylib-free movement, combat/special timing, projectile lifecycle, hit/block/miss/trade/KO, boundary, input, and same-build replay regressions |
+| `tests/` | Implemented: raylib-free movement/combat/match timing, projectile lifecycle, KO/draw/scoring/reset/rematch, input, and same-build replay regressions |
 | `scripts/` | Implemented: desktop and Emscripten configure/build/run helpers |
 
 `src/main.cpp` owns window lifetime, timing accumulation, input sampling coordination, the presentation-only debug-box toggle, and native/browser loop scheduling. Gameplay decisions remain inside the shared core.
@@ -67,9 +67,9 @@ The browser loop and combat rendering are verified in automated Chrome testing. 
 
 ## Input system — Implemented
 
-`FrameCommands` contains one `FighterCommand` per player. Each command records held movement/jump/block/attack values, just-pressed jump/light/heavy events, and held/pressed/released special and charged-attack values. `KeyboardInput` is the only gameplay-input component that queries raylib: it maps VOLT to `A`/`D`/`W`/`S`/`F`/`G`/`H`/`J` and EMBER to Left/Right/Up/Down/`K`/`L`/semicolon/apostrophe, then passes plain sampled values to `FrameCommandBuffer`.
+`FrameCommands` contains one `FighterCommand` per player plus a match-level `restartPressed` edge. Each fighter command records held movement/jump/block/attack values, just-pressed jump/light/heavy events, and held/pressed/released special and charged-attack values. `KeyboardInput` is the only gameplay-input component that queries raylib: it maps VOLT to `A`/`D`/`W`/`S`/`F`/`G`/`H`/`J`, EMBER to Left/Right/Up/Down/`K`/`L`/semicolon/apostrophe, and rematch to `R` or Enter, then passes plain sampled values to `FrameCommandBuffer`.
 
-Normal attack held values document current device state but do not start moves; only a new buffered press can do so. Charge starts from a press, advances from held state, and resolves from a release edge or observed not-held state. A buffered special press selects the fighter's configured special and attempts an atomic activation/spend. `Game` never queries devices, so tests and future replay, AI, or network sources can provide the same commands directly.
+Normal attack held values document current device state but do not start moves; only a new buffered press can do so. Charge starts from a press, advances from held state, and resolves once from a release edge or observed not-held state into cancellation or a configured charged move. A buffered special press selects the fighter's configured special and attempts an atomic activation/spend. Restart is consumed only in `MatchOver`. Because the buffer consumes every one-shot edge on one simulation tick even when combat is disabled, round-over and intro inputs cannot leak into a later fighting phase. `Game` never queries devices, so tests and future replay, AI, or network sources can provide the same commands directly.
 
 raylib 6.2's Emscripten backend maps physical DOM `Semicolon` and `Quote` codes to `KEY_SEMICOLON` and `KEY_APOSTROPHE` and registers key-down/key-up callbacks on the canvas. Chrome runtime input verified both special controls, including the `Semicolon` DOM code; physical keyboard ghosting, rollover, and non-US punctuation layouts remain device-dependent and unverified.
 
@@ -84,11 +84,17 @@ Each `Fighter` composes:
 - available, attacking, blocking, charging, hit-stun, or KO state;
 - current move/phase and frame count, stun duration, per-activation connection/effect flags, charge duration/release outcome, and short hit/block/special-impact feedback counters.
 
-`GameState` also owns a fixed eight-slot array of projectile values. An active projectile stores its owner, source move, position/velocity, captured direction, remaining lifetime, and current hitbox. Simulation state contains no textures, sounds, raylib vectors, heap-owned projectile entities, or other presentation resources. Charged damage/hitboxes, ultimates, combos, and match/round state are not implemented.
+`GameState` also owns a fixed eight-slot array of projectile values. An active projectile stores its owner, source move, position/velocity, captured direction, remaining lifetime, and current hitbox. Charged move selection is represented by stable move identifiers and existing copyable fighter fields; no separate charge-combat object or heap ownership is introduced. Simulation state contains no textures, sounds, raylib vectors, heap-owned projectile entities, or other presentation resources. Ultimates and combos are not implemented.
 
-## Combat system — Implemented through Phase 1D-B
+## Match state — Implemented in Phase 1E
 
-`MoveDefinition` stores a stable move identifier, owning fighter, melee/projectile behavior, energy cost, damage, startup/active/recovery frame counts, hitbox dimensions/offsets, hit-stun, knockback, projectile speed, and projectile lifetime. Shared definitions provide light (6 damage, 5/3/10 frames), heavy (14 damage, 12/4/17), VOLT's Thunder Bolt (16 damage, 12/1/20, 650 units/second, 90-tick lifetime), and EMBER's Inferno Burst (20 damage, 16/5/24). `CombatRules` centralizes the 100 energy cap, normal hit/block awards, 25 special cost, and 18/72 charge thresholds. Block-stun, multi-hit, actual charged-move, and cancel data remain absent.
+`GameState` stores a value-based `MatchPhase` (`RoundIntro`, `Fighting`, `RoundOver`, or `MatchOver`), round result/end reason, match winner, two round-win counters, round number, authoritative timer ticks, and phase-transition ticks. `MatchRules` supplies production defaults of 5,400 fighting ticks, 180 intro ticks, and 180 round-over ticks; tests may construct `Game` with shorter values without changing production balance.
+
+Only `Fighting` runs movement/combat and decrements the timer. After the contact snapshot is fully applied, KO is resolved before timeout, making a final-tick KO independent of timer ordering. `FinishRound` changes phase and awards at most one score; all later round-over ticks bypass combat. At transition, one reset function recreates both fighters from their canonical definitions, clears the fixed projectile pool and transient state, restores the timer, and preserves scores. A second win transitions from `RoundOver` to `MatchOver`; an accepted restart rebuilds a clean match while preserving the monotonically advancing global simulation frame.
+
+## Combat system — Implemented through Phase 1D-C
+
+`MoveDefinition` stores a stable move identifier, owning fighter, melee/projectile behavior, energy cost, damage, startup/active/recovery frame counts, hitbox dimensions/offsets, hit-stun, knockback, projectile speed, and projectile lifetime. Shared definitions provide light (6 damage, 5/3/10 frames), heavy (14 damage, 12/4/17), VOLT's Thunder Bolt (16 damage, 12/1/20, 650 units/second, 90-tick lifetime), EMBER's Inferno Burst (20 damage, 16/5/24), and six charged fighter/level variants. `CombatRules` centralizes the 100 energy cap, normal hit/block awards, 25 special cost, and 18/36/60/72 charge thresholds. Block-stun and multi-hit data remain absent.
 
 The press tick is startup frame 1. A phase is processed for exactly its configured number of ticks; the next phase begins at the start of the following tick. After the last recovery tick, the fighter becomes available at the start of the next tick and may accept a command then. A new hit sets hit-stun frame progress to zero after impact, so the configured number of restricted stun ticks begins on the following tick.
 
@@ -102,13 +108,14 @@ The implemented per-tick order is:
 6. Generate melee hitboxes and snapshot both fighter and projectile overlaps, guard outcomes, origins, and move references without damage mutation.
 7. Mark every valid melee activation as connected or projectile as inactive, then advance existing attack/stun frame counters.
 8. Resolve the snapshotted energy awards, blocks or damage, charge/special interruption, hit-stun, knockback, health clamp, and KO outcomes.
-9. Decrement projectile lifetime/remove expired or out-of-bounds projectiles, then increment the simulation frame.
+9. Decrement projectile lifetime/remove expired or out-of-bounds projectiles.
+10. Decrement the fighting timer, then resolve KO before timeout and enter `RoundOver` at most once; finally increment the simulation frame.
 
 Because step 6 snapshots all candidates before step 8 changes either fighter, simultaneous valid normal, burst, and projectile contacts resolve without player-one/player-two validation bias. This permits trades and double KO even when one outcome interrupts a source. One-hit bookkeeping is also committed for all candidates before outcome mutation, avoiding repeated active-frame results.
 
-Grounded held block is valid only in the blocking state and only when the contact origin is on the side the defender faces. It prevents all current normal and special damage and has no block-stun or chip damage. Attack recovery, charging, hit-stun, and KO reject new attacks. Command priority is block, light, heavy, special, then charge. Charging is grounded, stops movement, rejects jump/block/new attacks, counts its accepted press tick as frame 1, caps at 72, cancels below 18 on release, and reports ready at 18 or more. An unblocked hit interrupts charging or any special phase; spent energy is not refunded, and an already-created projectile persists independently.
+Grounded held block is valid only in the blocking state and only when the contact origin is on the side the defender faces. It prevents all current normal, special, and charged damage and has no block-stun or chip damage. Attack recovery, charging, hit-stun, and KO reject new attacks. Command priority is block, light, heavy, special, then charge. Charging is grounded, stops movement, rejects jump/block/new attacks, counts its accepted press tick as frame 1, caps at 72, and cancels below 18 on release. A valid release selects level 1 at 18–35, level 2 at 36–59, or level 3 at 60–72, clears the accumulated duration, and enters normal attack startup. An unblocked hit interrupts charging or any attack phase; spent special energy is not refunded, and an already-created projectile persists independently.
 
-Energy awards are part of each snapshotted normal-hit outcome. A light/heavy hit adds 8/12 to the attacker; a blocked normal adds 4 to the attacker and 6 to the defender. Because the activation is marked connected before outcomes apply, neither damage nor energy repeats on later active frames. Awards clamp to 100. Special activation requires `Available` state and at least 25 energy, and deducts exactly 25 when startup begins. Special hits and blocks deliberately grant no energy.
+Energy awards are part of each snapshotted normal-hit outcome. A light/heavy hit adds 8/12 to the attacker; a blocked normal adds 4 to the attacker and 6 to the defender. Because the activation is marked connected before outcomes apply, neither damage nor energy repeats on later active frames. Awards clamp to 100. Special activation requires `Available` state and at least 25 energy, and deducts exactly 25 when startup begins. Special and charged hits/blocks deliberately grant no energy; charged activation also costs none.
 
 ## Collision detection — Implemented movement and combat boxes
 
@@ -122,7 +129,7 @@ Each melee activation tracks whether it already connected. A hit or blocked cont
 
 ## Renderer and audio
 
-**Renderer implemented:** `GameRenderer` translates read-only `GameState` into raylib draw calls and owns a 1280×720 render texture. It draws the arena, state-specific attack/guard/charge/special poses, Thunder Bolt projectiles and trails, Inferno Burst expansion, hit/block/special-impact cues, live health and energy bars, charge percentage, KO labels, controls, and optional `F1` box outlines, then scales and letterboxes the result. Core state contains no raylib types, and rendering does not mutate it.
+**Renderer implemented:** `GameRenderer` translates read-only `GameState` into raylib draw calls and owns a 1280×720 render texture. It draws the arena, state-specific combat poses/effects, live health and energy, authoritative timer/round/win pips, intro/result messages, match winner/rematch panel, controls, and optional `F1` box outlines, then scales and letterboxes the result. Core state contains no raylib types, and rendering does not mutate it. Chrome runtime checks visually exercised charged effects and every primary match screen.
 
 **Audio proposed:** No audio resources or presentation layer exist yet. A later audio layer should consume events and own sound/music resources without changing simulation outcomes.
 
@@ -149,7 +156,7 @@ flowchart TB
     App --> Web
 ```
 
-The core target and CTest executable have been built on Linux. Emscripten 6.0.12 output is verified in headless Google Chrome 153 with active WebGL; browser combat input exercised and visually confirmed both character specials. The current native Linux Release target initialized raylib's X11 backend and an Intel/Mesa OpenGL 4.6 context through its first frame; its five-second automated run did not exercise native controls or normal shutdown. Windows and macOS remain untested targets.
+The Phase 1E core, CTest executable, and native raylib application build on Linux, and both Linux CTest trees pass. The current native runtime launch cannot open X11 display `:0`, so current native visuals and controls are not verified. Emscripten 6.0.12 output builds and completes an automated Chrome 153 two-round match/rematch flow with WebGL error state 0. Windows and macOS remain untested targets.
 
 ## Future multiplayer integration
 
@@ -159,15 +166,15 @@ Networking will not be embedded in fighter or combat code. Before online play, t
 
 ## Implemented architecture
 
-Phases 1A through 1D-B establish these validated boundaries:
+Phases 1A through 1E establish these validated boundaries:
 
-- `arena_clash_core` contains only standard C++ state, frame commands/buffering, movement/body collision, combat geometry, energy rules, charge transitions, projectile simulation, and combat resolution.
+- `arena_clash_core` contains only standard C++ state, frame commands/buffering, match flow, movement/body collision, combat geometry, energy rules, charge transitions, projectile simulation, and combat resolution.
 - `KeyboardInput` owns raylib key mapping; `FrameCommandBuffer` owns platform-neutral held/edge lifetime across render and simulation rates.
 - `GameRenderer` owns raylib resources and observes `const GameState&`.
 - `main.cpp` owns platform lifecycle, wall-clock accumulation, and loop registration.
 - Native and browser paths share `RunFrame`, `Game`, and rendering code; only scheduling differs.
 - Generated dependencies and outputs live under target-specific ignored build directories.
-- The initial core state can be recreated with `Game::initialize`; general serialization/restoration is deferred.
-- Replaying the same tested movement/combat/special/charge command sequence produces the same complete fighter and projectile state after every tick in the verified Linux build.
+- Initial and inter-round state use shared fighter initialization; `Game::initialize` creates a clean match, while general serialization/restoration remains deferred.
+- Replaying the same tested commands produces identical fighter, projectile, timer, scoring, phase, match-winner, and rematch state after every tick in the verified Linux build.
 
-Charged attacks, ultimates, match flow, audio, replay storage, deterministic state hashing, and rollback remain proposed. Fixed ticks and repeatable same-build tests are preparation for those systems, not evidence of cross-platform determinism.
+Ultimates, audio, replay storage, deterministic state hashing, and rollback remain proposed. Fixed ticks and repeatable same-build tests are preparation for those systems, not evidence of cross-platform determinism.

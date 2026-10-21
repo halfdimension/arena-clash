@@ -19,6 +19,37 @@ inline constexpr float kArenaGroundY = 564.0F;
 inline constexpr float kGravity = 2200.0F;
 inline constexpr float kAirControlFactor = 0.75F;
 inline constexpr std::size_t kMaximumProjectiles = 8;
+inline constexpr int kDefaultRoundDurationTicks = 90 * kSimulationRate;
+inline constexpr int kDefaultRoundIntroDurationTicks = 3 * kSimulationRate;
+inline constexpr int kDefaultRoundOverDurationTicks = 3 * kSimulationRate;
+inline constexpr int kRoundWinsRequired = 2;
+
+enum class MatchPhase {
+    RoundIntro,
+    Fighting,
+    RoundOver,
+    MatchOver,
+};
+
+enum class RoundResult {
+    None,
+    VoltWins,
+    EmberWins,
+    Draw,
+};
+
+enum class RoundEndReason {
+    None,
+    Knockout,
+    DoubleKnockout,
+    TimeOver,
+};
+
+struct MatchRules {
+    int roundDurationTicks = kDefaultRoundDurationTicks;
+    int roundIntroDurationTicks = kDefaultRoundIntroDurationTicks;
+    int roundOverDurationTicks = kDefaultRoundOverDurationTicks;
+};
 
 struct Projectile {
     bool active = false;
@@ -34,17 +65,29 @@ struct Projectile {
 struct GameState {
     std::array<Fighter, 2> fighters;
     std::array<Projectile, kMaximumProjectiles> projectiles;
-    std::uint64_t simulationFrame;
+    std::array<int, 2> roundWins{};
+    MatchPhase matchPhase = MatchPhase::RoundIntro;
+    RoundResult roundResult = RoundResult::None;
+    RoundResult matchWinner = RoundResult::None;
+    RoundEndReason roundEndReason = RoundEndReason::None;
+    int roundNumber = 1;
+    int roundTimerTicksRemaining = kDefaultRoundDurationTicks;
+    int phaseTicksRemaining = kDefaultRoundIntroDurationTicks;
+    std::uint64_t simulationFrame = 0;
 };
 
 class Game {
 public:
+    Game() = default;
+    explicit Game(MatchRules matchRules);
+
     void initialize();
     void advanceSimulation(const FrameCommands& commands);
 
     const GameState& state() const;
 
 private:
+    MatchRules matchRules_;
     GameState state_{};
 };
 

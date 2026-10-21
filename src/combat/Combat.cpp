@@ -74,6 +74,102 @@ constexpr MoveDefinition kInfernoBurstMove = {
     0,
 };
 
+constexpr MoveDefinition kThunderStrikeLevel1Move = {
+    MoveId::ThunderStrikeLevel1,
+    MoveOwner::Volt,
+    MoveBehavior::Melee,
+    0,
+    16,
+    8,
+    3,
+    18,
+    {96.0F, 60.0F, 6.0F, 28.0F},
+    18,
+    440.0F,
+    0.0F,
+    0,
+};
+
+constexpr MoveDefinition kThunderStrikeLevel2Move = {
+    MoveId::ThunderStrikeLevel2,
+    MoveOwner::Volt,
+    MoveBehavior::Melee,
+    0,
+    23,
+    8,
+    3,
+    18,
+    {96.0F, 60.0F, 6.0F, 28.0F},
+    21,
+    500.0F,
+    0.0F,
+    0,
+};
+
+constexpr MoveDefinition kThunderStrikeLevel3Move = {
+    MoveId::ThunderStrikeLevel3,
+    MoveOwner::Volt,
+    MoveBehavior::Melee,
+    0,
+    30,
+    8,
+    3,
+    18,
+    {96.0F, 60.0F, 6.0F, 28.0F},
+    24,
+    560.0F,
+    0.0F,
+    0,
+};
+
+constexpr MoveDefinition kFlameSmashLevel1Move = {
+    MoveId::FlameSmashLevel1,
+    MoveOwner::Ember,
+    MoveBehavior::Melee,
+    0,
+    16,
+    13,
+    4,
+    23,
+    {76.0F, 72.0F, 4.0F, 20.0F},
+    20,
+    560.0F,
+    0.0F,
+    0,
+};
+
+constexpr MoveDefinition kFlameSmashLevel2Move = {
+    MoveId::FlameSmashLevel2,
+    MoveOwner::Ember,
+    MoveBehavior::Melee,
+    0,
+    23,
+    13,
+    4,
+    23,
+    {76.0F, 72.0F, 4.0F, 20.0F},
+    23,
+    680.0F,
+    0.0F,
+    0,
+};
+
+constexpr MoveDefinition kFlameSmashLevel3Move = {
+    MoveId::FlameSmashLevel3,
+    MoveOwner::Ember,
+    MoveBehavior::Melee,
+    0,
+    30,
+    13,
+    4,
+    23,
+    {76.0F, 72.0F, 4.0F, 20.0F},
+    26,
+    800.0F,
+    0.0F,
+    0,
+};
+
 constexpr CombatRules kCombatRules = {
     100,
     0,
@@ -83,6 +179,8 @@ constexpr CombatRules kCombatRules = {
     6,
     kSpecialEnergyCost,
     18,
+    36,
+    60,
     72,
 };
 
@@ -99,6 +197,18 @@ const MoveDefinition& GetMoveDefinition(MoveId moveId) {
             return kThunderBoltMove;
         case MoveId::InfernoBurst:
             return kInfernoBurstMove;
+        case MoveId::ThunderStrikeLevel1:
+            return kThunderStrikeLevel1Move;
+        case MoveId::ThunderStrikeLevel2:
+            return kThunderStrikeLevel2Move;
+        case MoveId::ThunderStrikeLevel3:
+            return kThunderStrikeLevel3Move;
+        case MoveId::FlameSmashLevel1:
+            return kFlameSmashLevel1Move;
+        case MoveId::FlameSmashLevel2:
+            return kFlameSmashLevel2Move;
+        case MoveId::FlameSmashLevel3:
+            return kFlameSmashLevel3Move;
         case MoveId::None:
             break;
     }
@@ -107,6 +217,60 @@ const MoveDefinition& GetMoveDefinition(MoveId moveId) {
 
 MoveId GetSpecialMoveId(const Fighter& fighter) {
     return fighter.id == FighterId::Volt ? MoveId::ThunderBolt : MoveId::InfernoBurst;
+}
+
+int GetChargeLevel(int chargeFrames) {
+    if (chargeFrames < kCombatRules.minimumChargeFrames) {
+        return 0;
+    }
+    if (chargeFrames < kCombatRules.chargeLevel2Frames) {
+        return 1;
+    }
+    if (chargeFrames < kCombatRules.chargeLevel3Frames) {
+        return 2;
+    }
+    return 3;
+}
+
+MoveId GetChargedMoveId(const Fighter& fighter, int chargeFrames) {
+    const int level = GetChargeLevel(chargeFrames);
+    assert(level > 0);
+    if (fighter.id == FighterId::Volt) {
+        if (level == 1) {
+            return MoveId::ThunderStrikeLevel1;
+        }
+        if (level == 2) {
+            return MoveId::ThunderStrikeLevel2;
+        }
+        return MoveId::ThunderStrikeLevel3;
+    }
+    if (level == 1) {
+        return MoveId::FlameSmashLevel1;
+    }
+    if (level == 2) {
+        return MoveId::FlameSmashLevel2;
+    }
+    return MoveId::FlameSmashLevel3;
+}
+
+int GetMoveChargeLevel(MoveId moveId) {
+    switch (moveId) {
+        case MoveId::ThunderStrikeLevel1:
+        case MoveId::FlameSmashLevel1:
+            return 1;
+        case MoveId::ThunderStrikeLevel2:
+        case MoveId::FlameSmashLevel2:
+            return 2;
+        case MoveId::ThunderStrikeLevel3:
+        case MoveId::FlameSmashLevel3:
+            return 3;
+        default:
+            return 0;
+    }
+}
+
+bool IsChargedMove(MoveId moveId) {
+    return GetMoveChargeLevel(moveId) > 0;
 }
 
 const CombatRules& GetCombatRules() {

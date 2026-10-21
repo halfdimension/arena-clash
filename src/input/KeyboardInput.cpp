@@ -8,6 +8,7 @@ void KeyboardInput::sample() {
     debugHitboxTogglePending_ = debugHitboxTogglePending_ || IsKeyPressed(KEY_F1);
 
     FrameCommands sampledCommands;
+    sampledCommands.restartPressed = IsKeyPressed(KEY_R) || IsKeyPressed(KEY_ENTER);
     FighterCommand& volt = sampledCommands.fighters[0];
     volt.moveLeftHeld = IsKeyDown(KEY_A);
     volt.moveRightHeld = IsKeyDown(KEY_D);

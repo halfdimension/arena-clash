@@ -2,6 +2,7 @@
 #include "core/Game.hpp"
 #include "input/FrameCommandBuffer.hpp"
 
+#include <array>
 #include <cmath>
 #include <iostream>
 
@@ -31,6 +32,15 @@ const arena::Fighter& Ember(const arena::Game& game) {
 
 void AdvanceEmpty(arena::Game& game, int tickCount) {
     for (int tick = 0; tick < tickCount; ++tick) {
+        game.advanceSimulation({});
+    }
+}
+
+void AdvanceToFighting(arena::Game& game) {
+    for (int tick = 0; tick <= arena::kDefaultRoundIntroDurationTicks; ++tick) {
+        if (game.state().matchPhase == arena::MatchPhase::Fighting) {
+            return;
+        }
         game.advanceSimulation({});
     }
 }
@@ -114,9 +124,12 @@ const arena::Projectile* FirstActiveProjectile(const arena::Game& game) {
     return nullptr;
 }
 
+bool CompleteStatesEqual(const arena::Game& first, const arena::Game& second);
+
 bool TestInitialStateAndMoveData() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
     const arena::MoveDefinition& light = arena::GetMoveDefinition(arena::MoveId::Light);
     const arena::MoveDefinition& heavy = arena::GetMoveDefinition(arena::MoveId::Heavy);
     const arena::MoveDefinition& thunderBolt =
@@ -126,7 +139,10 @@ bool TestInitialStateAndMoveData() {
     const arena::CombatRules& combatRules = arena::GetCombatRules();
 
     bool passed = true;
-    passed &= Expect(game.state().simulationFrame == 0, "initial frame is zero");
+    passed &= Expect(game.state().simulationFrame ==
+                         static_cast<std::uint64_t>(arena::kDefaultRoundIntroDurationTicks) &&
+                         game.state().matchPhase == arena::MatchPhase::Fighting,
+                     "default round intro lasts its exact configured ticks");
     passed &= Expect(Volt(game).id == arena::FighterId::Volt, "player one is Volt");
     passed &= Expect(Ember(game).id == arena::FighterId::Ember, "player two is Ember");
     passed &= Expect(Volt(game).grounded && Ember(game).grounded, "fighters start grounded");
@@ -154,6 +170,8 @@ bool TestInitialStateAndMoveData() {
                          combatRules.blockedDefenderEnergyGain == 6 &&
                          combatRules.specialEnergyCost == 25 &&
                          combatRules.minimumChargeFrames == 18 &&
+                         combatRules.chargeLevel2Frames == 36 &&
+                         combatRules.chargeLevel3Frames == 60 &&
                          combatRules.maximumChargeFrames == 72,
                      "energy and charge tuning is centralized");
     passed &= Expect(thunderBolt.owner == arena::MoveOwner::Volt &&
@@ -177,6 +195,7 @@ bool TestInitialStateAndMoveData() {
 bool TestHorizontalMovementAndOpposingInput() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
     const float initialVoltX = Volt(game).position.x;
 
     arena::FrameCommands commands;
@@ -203,6 +222,7 @@ bool TestHorizontalMovementAndOpposingInput() {
 bool TestJumpGravityLandingAndHeldJump() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
 
     arena::FrameCommands commands;
     commands.fighters[0].jumpHeld = true;
@@ -242,6 +262,7 @@ bool TestJumpGravityLandingAndHeldJump() {
 bool TestStageBoundaries() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
 
     arena::FrameCommands commands;
     commands.fighters[0].moveLeftHeld = true;
@@ -263,6 +284,7 @@ bool TestStageBoundaries() {
 bool TestSimultaneousMovementAndCollision() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
 
     arena::FrameCommands commands;
     commands.fighters[0].moveRightHeld = true;
@@ -293,6 +315,7 @@ bool TestSimultaneousMovementAndCollision() {
 bool TestFacingUpdatesAfterAirborneCrossOver() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
 
     arena::FrameCommands approach;
     approach.fighters[0].moveRightHeld = true;
@@ -324,6 +347,7 @@ bool TestFacingUpdatesAfterAirborneCrossOver() {
 bool TestAttackLifecycle(arena::MoveId moveId, const char* moveName) {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
     const arena::MoveDefinition& move = arena::GetMoveDefinition(moveId);
 
     PressMove(game, 0, moveId);
@@ -363,6 +387,7 @@ bool TestAttackLifecycle(arena::MoveId moveId, const char* moveName) {
 bool TestDamageOneHitAndHitStunLockout() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
     ApproachToBodyContact(game);
     AdvanceToFirstActiveFrame(game, 0, arena::MoveId::Light);
 
@@ -396,6 +421,7 @@ bool TestDamageOneHitAndHitStunLockout() {
 bool TestBlocking() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
     ApproachToBodyContact(game);
     AdvanceToFirstActiveFrame(game, 0, arena::MoveId::Heavy, true);
 
@@ -423,6 +449,7 @@ bool TestBlocking() {
 bool TestInvalidAttackDuringRecovery() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
     const arena::MoveDefinition& light = arena::GetMoveDefinition(arena::MoveId::Light);
     PressMove(game, 0, arena::MoveId::Light);
     AdvanceEmpty(game, light.startupFrames + light.activeFrames);
@@ -444,6 +471,7 @@ bool TestInvalidAttackDuringRecovery() {
 bool TestHorizontalAndVerticalMisses() {
     arena::Game horizontalGame;
     horizontalGame.initialize();
+    AdvanceToFighting(horizontalGame);
     AdvanceToFirstActiveFrame(horizontalGame, 0, arena::MoveId::Heavy);
     bool passed = true;
     passed &= Expect(Ember(horizontalGame).health == 100,
@@ -451,6 +479,7 @@ bool TestHorizontalAndVerticalMisses() {
 
     arena::Game verticalGame;
     verticalGame.initialize();
+    AdvanceToFighting(verticalGame);
     ApproachToBodyContact(verticalGame);
     arena::FrameCommands jump;
     jump.fighters[1].jumpPressed = true;
@@ -469,6 +498,7 @@ bool TestHorizontalAndVerticalMisses() {
 bool TestHitboxOrientation() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
     arena::Fighter rightFacing = Volt(game);
     arena::Fighter leftFacing = Volt(game);
     rightFacing.facing = arena::FacingDirection::Right;
@@ -496,6 +526,7 @@ bool TestHitboxOrientation() {
 bool TestSimultaneousTrade() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
     ApproachToBodyContact(game);
 
     arena::FrameCommands attacks;
@@ -520,6 +551,7 @@ bool TestSimultaneousTrade() {
 bool TestKnockbackAtStageBoundary() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
     arena::FrameCommands moveRight;
     moveRight.fighters[0].moveRightHeld = true;
     moveRight.fighters[1].moveRightHeld = true;
@@ -544,6 +576,7 @@ bool TestKnockbackAtStageBoundary() {
 bool TestHeldAttackDoesNotRepeat() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
     arena::FrameCommands commands;
     commands.fighters[0].lightAttackHeld = true;
     commands.fighters[0].lightAttackPressed = true;
@@ -564,6 +597,7 @@ bool TestHeldAttackDoesNotRepeat() {
 bool TestEnergyRulesAndSpecialFoundation() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
     ApproachToBodyContact(game);
     AdvanceToFirstActiveFrame(game, 0, arena::MoveId::Heavy);
 
@@ -603,6 +637,7 @@ bool TestFrameCommandEdgeBuffer() {
     pressed.fighters[0].specialAttackPressed = true;
     pressed.fighters[1].chargedAttackHeld = true;
     pressed.fighters[1].chargedAttackPressed = true;
+    pressed.restartPressed = true;
     buffer.sample(pressed);
 
     arena::FrameCommands released;
@@ -621,6 +656,8 @@ bool TestFrameCommandEdgeBuffer() {
                          firstTick.fighters[1].chargedAttackReleased &&
                          !firstTick.fighters[1].chargedAttackHeld,
                      "charge press and release survive render frames until a simulation tick");
+    passed &= Expect(firstTick.restartPressed && !catchUpTick.restartPressed,
+                     "restart is buffered and consumed as a one-shot command");
     passed &= Expect(!catchUpTick.fighters[0].specialAttackPressed &&
                          !catchUpTick.fighters[0].specialAttackReleased &&
                          !catchUpTick.fighters[1].chargedAttackPressed &&
@@ -629,6 +666,7 @@ bool TestFrameCommandEdgeBuffer() {
 
     arena::Game edgeGame;
     edgeGame.initialize();
+    AdvanceToFighting(edgeGame);
     edgeGame.advanceSimulation(firstTick);
     passed &= Expect(Volt(edgeGame).energy == 0 &&
                          Volt(edgeGame).combatState == arena::CombatState::Available,
@@ -669,10 +707,55 @@ void ReleaseCharge(arena::Game& game, std::size_t fighterIndex) {
     game.advanceSimulation(commands);
 }
 
+void ChargeAndRelease(arena::Game& game, std::size_t fighterIndex, int chargeFrames) {
+    BeginCharge(game, fighterIndex);
+    HoldCharge(game, fighterIndex, chargeFrames - 1);
+    ReleaseCharge(game, fighterIndex);
+}
+
+void KnockOutWithChargedAttacks(arena::Game& game, std::size_t attackerIndex) {
+    const arena::MoveId moveId = attackerIndex == 0
+                                     ? arena::MoveId::ThunderStrikeLevel3
+                                     : arena::MoveId::FlameSmashLevel3;
+    for (int attack = 0; attack < 4; ++attack) {
+        AdvanceUntilBothAvailable(game);
+        ApproachToBodyContact(game);
+        ChargeAndRelease(game, attackerIndex, 60);
+        AdvanceEmpty(game, arena::GetMoveDefinition(moveId).startupFrames);
+    }
+}
+
+void TradeLevelThreeChargedAttacks(arena::Game& game) {
+    AdvanceUntilBothAvailable(game);
+    ApproachToBodyContact(game);
+    arena::FrameCommands bothStart;
+    bothStart.fighters[0].chargedAttackPressed = true;
+    bothStart.fighters[0].chargedAttackHeld = true;
+    bothStart.fighters[1].chargedAttackPressed = true;
+    bothStart.fighters[1].chargedAttackHeld = true;
+    game.advanceSimulation(bothStart);
+
+    arena::FrameCommands bothHeld;
+    bothHeld.fighters[0].chargedAttackHeld = true;
+    bothHeld.fighters[1].chargedAttackHeld = true;
+    for (int tick = 0; tick < 59; ++tick) {
+        game.advanceSimulation(bothHeld);
+    }
+
+    arena::FrameCommands emberRelease;
+    emberRelease.fighters[0].chargedAttackHeld = true;
+    emberRelease.fighters[1].chargedAttackReleased = true;
+    game.advanceSimulation(emberRelease);
+    HoldCharge(game, 0, 4);
+    ReleaseCharge(game, 0);
+    AdvanceEmpty(game, 8);
+}
+
 bool TestChargeThresholdsAndMaximum() {
     const arena::CombatRules& rules = arena::GetCombatRules();
     arena::Game earlyRelease;
     earlyRelease.initialize();
+    AdvanceToFighting(earlyRelease);
     BeginCharge(earlyRelease, 0);
     HoldCharge(earlyRelease, 0, rules.minimumChargeFrames - 2);
 
@@ -687,15 +770,19 @@ bool TestChargeThresholdsAndMaximum() {
 
     arena::Game exactRelease;
     exactRelease.initialize();
+    AdvanceToFighting(exactRelease);
     BeginCharge(exactRelease, 0);
     HoldCharge(exactRelease, 0, rules.minimumChargeFrames - 1);
     passed &= Expect(Volt(exactRelease).chargeFrames == rules.minimumChargeFrames,
                      "minimum charge threshold occurs on the exact configured tick");
     ReleaseCharge(exactRelease, 0);
-    passed &= Expect(Volt(exactRelease).combatState == arena::CombatState::Available &&
+    passed &= Expect(Volt(exactRelease).combatState == arena::CombatState::Attacking &&
+                         Volt(exactRelease).currentMove ==
+                             arena::MoveId::ThunderStrikeLevel1 &&
+                         Volt(exactRelease).attackPhase == arena::AttackPhase::Startup &&
                          Volt(exactRelease).chargeReleaseOutcome ==
                              arena::ChargeReleaseOutcome::Ready,
-                     "release at minimum charge reports a ready charged attack");
+                     "release at minimum charge starts Thunder Strike startup");
     exactRelease.advanceSimulation({});
     passed &= Expect(Volt(exactRelease).chargeReleaseOutcome ==
                          arena::ChargeReleaseOutcome::None,
@@ -703,6 +790,7 @@ bool TestChargeThresholdsAndMaximum() {
 
     arena::Game maximumCharge;
     maximumCharge.initialize();
+    AdvanceToFighting(maximumCharge);
     BeginCharge(maximumCharge, 0);
     HoldCharge(maximumCharge, 0, rules.maximumChargeFrames + 20);
     passed &= Expect(Volt(maximumCharge).combatState == arena::CombatState::Charging &&
@@ -711,9 +799,347 @@ bool TestChargeThresholdsAndMaximum() {
     return passed;
 }
 
+bool TestChargedMoveDataAndLevelBoundaries() {
+    struct BoundaryCase {
+        int chargeFrames;
+        int level;
+    };
+    constexpr std::array<BoundaryCase, 7> kCases = {{{17, 0}, {18, 1}, {35, 1}, {36, 2},
+                                                     {59, 2}, {60, 3}, {72, 3}}};
+
+    bool passed = true;
+    for (const BoundaryCase& testCase : kCases) {
+        arena::Game game;
+        game.initialize();
+        AdvanceToFighting(game);
+        BeginCharge(game, 0);
+        HoldCharge(game, 0, testCase.chargeFrames - 1);
+        passed &= Expect(Volt(game).chargeFrames == testCase.chargeFrames,
+                         "charge reaches each exact level boundary");
+        ReleaseCharge(game, 0);
+        if (testCase.level == 0) {
+            passed &= Expect(Volt(game).combatState == arena::CombatState::Available &&
+                                 Volt(game).chargeReleaseOutcome ==
+                                     arena::ChargeReleaseOutcome::Cancelled &&
+                                 Volt(game).chargeFrames == 0,
+                             "a 17-tick release cancels and clears charge state");
+        } else {
+            passed &= Expect(Volt(game).combatState == arena::CombatState::Attacking &&
+                                 arena::GetMoveChargeLevel(Volt(game).currentMove) ==
+                                     testCase.level &&
+                                 Volt(game).chargeReleaseOutcome ==
+                                     arena::ChargeReleaseOutcome::Ready &&
+                                 Volt(game).chargeFrames == 0,
+                             "charged release selects the exact configured level once");
+        }
+    }
+
+    const arena::MoveDefinition& thunder1 =
+        arena::GetMoveDefinition(arena::MoveId::ThunderStrikeLevel1);
+    const arena::MoveDefinition& thunder2 =
+        arena::GetMoveDefinition(arena::MoveId::ThunderStrikeLevel2);
+    const arena::MoveDefinition& thunder3 =
+        arena::GetMoveDefinition(arena::MoveId::ThunderStrikeLevel3);
+    const arena::MoveDefinition& flame1 =
+        arena::GetMoveDefinition(arena::MoveId::FlameSmashLevel1);
+    const arena::MoveDefinition& flame2 =
+        arena::GetMoveDefinition(arena::MoveId::FlameSmashLevel2);
+    const arena::MoveDefinition& flame3 =
+        arena::GetMoveDefinition(arena::MoveId::FlameSmashLevel3);
+    passed &= Expect(thunder1.damage == 16 && thunder2.damage == 23 &&
+                         thunder3.damage == 30 && flame1.damage == 16 &&
+                         flame2.damage == 23 && flame3.damage == 30,
+                     "charged damage is centralized at 16, 23, and 30 by level");
+    passed &= Expect(thunder1.owner == arena::MoveOwner::Volt &&
+                         flame1.owner == arena::MoveOwner::Ember &&
+                         thunder1.startupFrames < flame1.startupFrames &&
+                         thunder1.hitbox.width > flame1.hitbox.width &&
+                         flame1.knockbackStrength > thunder1.knockbackStrength &&
+                         flame2.knockbackStrength > thunder2.knockbackStrength &&
+                         flame3.knockbackStrength > thunder3.knockbackStrength,
+                     "charged move data preserves VOLT speed/range and EMBER knockback identity");
+
+    arena::Game capped;
+    capped.initialize();
+    AdvanceToFighting(capped);
+    BeginCharge(capped, 1);
+    HoldCharge(capped, 1, 100);
+    passed &= Expect(Ember(capped).chargeFrames == 72,
+                     "charging beyond 72 ticks remains capped");
+    ReleaseCharge(capped, 1);
+    passed &= Expect(Ember(capped).currentMove == arena::MoveId::FlameSmashLevel3,
+                     "a capped EMBER release selects Flame Smash level three");
+    return passed;
+}
+
+bool TestChargedDamageTimingAndEconomy() {
+    constexpr std::array<int, 3> kChargeFrames = {18, 36, 60};
+    constexpr std::array<int, 3> kDamage = {16, 23, 30};
+    bool passed = true;
+
+    for (std::size_t fighterIndex = 0; fighterIndex < 2; ++fighterIndex) {
+        for (std::size_t levelIndex = 0; levelIndex < kChargeFrames.size(); ++levelIndex) {
+            arena::Game game;
+            game.initialize();
+            AdvanceToFighting(game);
+            ApproachToBodyContact(game);
+            const int defenderHealth = game.state().fighters[1U - fighterIndex].health;
+            const int attackerEnergy = game.state().fighters[fighterIndex].energy;
+            const int defenderEnergy = game.state().fighters[1U - fighterIndex].energy;
+            ChargeAndRelease(game, fighterIndex, kChargeFrames[levelIndex]);
+            const arena::MoveDefinition& move =
+                arena::GetMoveDefinition(game.state().fighters[fighterIndex].currentMove);
+            AdvanceEmpty(game, move.startupFrames - 1);
+            passed &= Expect(game.state().fighters[1U - fighterIndex].health == defenderHealth &&
+                                 game.state().fighters[fighterIndex].attackPhase ==
+                                     arena::AttackPhase::Startup,
+                             "charged attacks do not damage during startup");
+            AdvanceEmpty(game, 1);
+            passed &= Expect(game.state().fighters[1U - fighterIndex].health ==
+                                 defenderHealth - kDamage[levelIndex] &&
+                                 game.state().fighters[fighterIndex].attackHasConnected,
+                             "each charged level deals its configured damage on activation");
+            const int healthAfterHit = game.state().fighters[1U - fighterIndex].health;
+            AdvanceEmpty(game, move.activeFrames - 1);
+            passed &= Expect(game.state().fighters[1U - fighterIndex].health == healthAfterHit,
+                             "a charged activation connects only once");
+            passed &= Expect(game.state().fighters[fighterIndex].energy == attackerEnergy &&
+                                 game.state().fighters[1U - fighterIndex].energy ==
+                                     defenderEnergy,
+                             "charged hits neither spend nor award energy");
+        }
+    }
+
+    arena::Game lifecycle;
+    lifecycle.initialize();
+    AdvanceToFighting(lifecycle);
+    ChargeAndRelease(lifecycle, 0, 36);
+    const arena::MoveDefinition& move =
+        arena::GetMoveDefinition(arena::MoveId::ThunderStrikeLevel2);
+    passed &= Expect(Volt(lifecycle).combatStateFrame == 1 &&
+                         Volt(lifecycle).attackPhase == arena::AttackPhase::Startup,
+                     "charged release tick is startup frame one");
+    AdvanceEmpty(lifecycle, move.startupFrames - 1);
+    passed &= Expect(Volt(lifecycle).combatStateFrame == move.startupFrames &&
+                         Volt(lifecycle).attackPhase == arena::AttackPhase::Startup,
+                     "charged startup lasts its exact configured ticks");
+    AdvanceEmpty(lifecycle, 1);
+    passed &= Expect(Volt(lifecycle).attackPhase == arena::AttackPhase::Active &&
+                         Volt(lifecycle).combatStateFrame == 1,
+                     "charged active begins after startup");
+    AdvanceEmpty(lifecycle, move.activeFrames);
+    passed &= Expect(Volt(lifecycle).attackPhase == arena::AttackPhase::Recovery &&
+                         Volt(lifecycle).combatStateFrame == 1,
+                     "charged recovery follows the exact active duration");
+    AdvanceEmpty(lifecycle, move.recoveryFrames);
+    passed &= Expect(Volt(lifecycle).combatState == arena::CombatState::Available &&
+                         Volt(lifecycle).currentMove == arena::MoveId::None,
+                     "charged recovery returns to available on schedule");
+    return passed;
+}
+
+bool TestChargedBlockMissFacingAndLockouts() {
+    bool passed = true;
+
+    arena::Game blocked;
+    blocked.initialize();
+    AdvanceToFighting(blocked);
+    ApproachToBodyContact(blocked);
+    ChargeAndRelease(blocked, 0, 60);
+    const arena::MoveDefinition& thunder =
+        arena::GetMoveDefinition(arena::MoveId::ThunderStrikeLevel3);
+    arena::FrameCommands guard;
+    guard.fighters[1].blockHeld = true;
+    for (int tick = 0; tick < thunder.startupFrames; ++tick) {
+        blocked.advanceSimulation(guard);
+    }
+    passed &= Expect(Ember(blocked).health == 100 && Ember(blocked).blockFlashFrames > 0 &&
+                         Volt(blocked).attackHasConnected && Volt(blocked).energy == 0 &&
+                         Ember(blocked).energy == 0,
+                     "a facing block consumes a charged hit with no chip or energy gain");
+
+    arena::Game miss;
+    miss.initialize();
+    AdvanceToFighting(miss);
+    ChargeAndRelease(miss, 0, 60);
+    AdvanceEmpty(miss, thunder.startupFrames + thunder.activeFrames);
+    passed &= Expect(Ember(miss).health == 100 && !Volt(miss).attackHasConnected,
+                     "an out-of-range charged attack misses");
+
+    arena::Fighter rightFacing = Volt(miss);
+    rightFacing.position.x = 500.0F;
+    rightFacing.facing = arena::FacingDirection::Right;
+    arena::Fighter leftFacing = rightFacing;
+    leftFacing.facing = arena::FacingDirection::Left;
+    const arena::Rectanglef rightHitbox = arena::GetAttackHitbox(rightFacing, thunder);
+    const arena::Rectanglef leftHitbox = arena::GetAttackHitbox(leftFacing, thunder);
+    passed &= Expect(rightHitbox.x > rightFacing.position.x &&
+                         leftHitbox.x + leftHitbox.width < leftFacing.position.x,
+                     "charged hitboxes mirror with facing direction");
+
+    arena::Game recovery;
+    recovery.initialize();
+    AdvanceToFighting(recovery);
+    ChargeAndRelease(recovery, 0, 18);
+    AdvanceEmpty(recovery, arena::GetMoveDefinition(Volt(recovery).currentMove).startupFrames +
+                               arena::GetMoveDefinition(Volt(recovery).currentMove).activeFrames);
+    arena::FrameCommands rejectedCharge;
+    rejectedCharge.fighters[0].chargedAttackPressed = true;
+    rejectedCharge.fighters[0].chargedAttackHeld = true;
+    recovery.advanceSimulation(rejectedCharge);
+    passed &= Expect(Volt(recovery).combatState == arena::CombatState::Attacking &&
+                         Volt(recovery).attackPhase == arena::AttackPhase::Recovery,
+                     "charging cannot start during charged recovery");
+
+    arena::Game interrupted;
+    interrupted.initialize();
+    AdvanceToFighting(interrupted);
+    ApproachToBodyContact(interrupted);
+    arena::FrameCommands startLightAndCharge;
+    startLightAndCharge.fighters[0].lightAttackPressed = true;
+    startLightAndCharge.fighters[1].chargedAttackPressed = true;
+    startLightAndCharge.fighters[1].chargedAttackHeld = true;
+    interrupted.advanceSimulation(startLightAndCharge);
+    arena::FrameCommands keepCharging;
+    keepCharging.fighters[1].chargedAttackHeld = true;
+    for (int tick = 0; tick < arena::GetMoveDefinition(arena::MoveId::Light).startupFrames;
+         ++tick) {
+        interrupted.advanceSimulation(keepCharging);
+    }
+    passed &= Expect(Ember(interrupted).combatState == arena::CombatState::HitStun &&
+                         Ember(interrupted).chargeReleaseOutcome ==
+                             arena::ChargeReleaseOutcome::Interrupted &&
+                         Ember(interrupted).chargeFrames == 0,
+                     "an unblocked hit cancels accumulated charge");
+    arena::FrameCommands staleRelease;
+    staleRelease.fighters[1].chargedAttackReleased = true;
+    interrupted.advanceSimulation(staleRelease);
+    passed &= Expect(Ember(interrupted).combatState == arena::CombatState::HitStun &&
+                         Ember(interrupted).currentMove == arena::MoveId::None,
+                     "a stale release after interruption cannot start a charged attack");
+    return passed;
+}
+
+bool TestChargedTradesAndOtherMoveInteractions() {
+    bool passed = true;
+
+    arena::Game chargedTrade;
+    chargedTrade.initialize();
+    AdvanceToFighting(chargedTrade);
+    ApproachToBodyContact(chargedTrade);
+    arena::FrameCommands bothStart;
+    bothStart.fighters[0].chargedAttackPressed = true;
+    bothStart.fighters[0].chargedAttackHeld = true;
+    bothStart.fighters[1].chargedAttackPressed = true;
+    bothStart.fighters[1].chargedAttackHeld = true;
+    chargedTrade.advanceSimulation(bothStart);
+    arena::FrameCommands bothHeld;
+    bothHeld.fighters[0].chargedAttackHeld = true;
+    bothHeld.fighters[1].chargedAttackHeld = true;
+    for (int tick = 0; tick < 58; ++tick) {
+        chargedTrade.advanceSimulation(bothHeld);
+    }
+    arena::FrameCommands emberRelease;
+    emberRelease.fighters[0].chargedAttackHeld = true;
+    emberRelease.fighters[1].chargedAttackReleased = true;
+    chargedTrade.advanceSimulation(emberRelease);
+    for (int tick = 0; tick < 4; ++tick) {
+        arena::FrameCommands voltHeld;
+        voltHeld.fighters[0].chargedAttackHeld = true;
+        chargedTrade.advanceSimulation(voltHeld);
+    }
+    ReleaseCharge(chargedTrade, 0);
+    AdvanceEmpty(chargedTrade, 8);
+    passed &= Expect(Volt(chargedTrade).health == 77 && Ember(chargedTrade).health == 70 &&
+                         Volt(chargedTrade).combatState == arena::CombatState::HitStun &&
+                         Ember(chargedTrade).combatState == arena::CombatState::HitStun,
+                     "different charged startups still resolve a fair simultaneous trade");
+
+    arena::Game normalInterrupt;
+    normalInterrupt.initialize();
+    AdvanceToFighting(normalInterrupt);
+    ApproachToBodyContact(normalInterrupt);
+    ChargeAndRelease(normalInterrupt, 0, 18);
+    PressMove(normalInterrupt, 1, arena::MoveId::Light);
+    AdvanceEmpty(normalInterrupt,
+                 arena::GetMoveDefinition(arena::MoveId::Light).startupFrames);
+    passed &= Expect(Volt(normalInterrupt).health == 94 && Ember(normalInterrupt).health == 100 &&
+                         Volt(normalInterrupt).combatState == arena::CombatState::HitStun,
+                     "a normal attack can interrupt charged startup before activation");
+
+    arena::Game specialTrade;
+    specialTrade.initialize();
+    AdvanceToFighting(specialTrade);
+    EarnEnergy(specialTrade, 1, 25);
+    ApproachToBodyContact(specialTrade);
+    const int voltHealthBeforeSpecialTrade = Volt(specialTrade).health;
+    const int emberHealthBeforeSpecialTrade = Ember(specialTrade).health;
+    BeginCharge(specialTrade, 0);
+    HoldCharge(specialTrade, 0, 20);
+    arena::FrameCommands specialAndHold;
+    specialAndHold.fighters[0].chargedAttackHeld = true;
+    specialAndHold.fighters[1].specialAttackPressed = true;
+    specialTrade.advanceSimulation(specialAndHold);
+    HoldCharge(specialTrade, 0, 7);
+    ReleaseCharge(specialTrade, 0);
+    AdvanceEmpty(specialTrade, 8);
+    passed &= Expect(Volt(specialTrade).health == voltHealthBeforeSpecialTrade - 20 &&
+                         Ember(specialTrade).health == emberHealthBeforeSpecialTrade - 16 &&
+                         Volt(specialTrade).combatState == arena::CombatState::HitStun &&
+                         Ember(specialTrade).combatState == arena::CombatState::HitStun,
+                     "charged and special active contacts resolve in the same snapshot");
+    return passed;
+}
+
+bool TestChargedKoLockoutAndReplayConsistency() {
+    arena::Game koGame;
+    koGame.initialize();
+    AdvanceToFighting(koGame);
+    ApproachToBodyContact(koGame);
+    for (int attack = 0; attack < 4 && Ember(koGame).health > 0; ++attack) {
+        AdvanceUntilBothAvailable(koGame);
+        ApproachToBodyContact(koGame);
+        ChargeAndRelease(koGame, 0, 60);
+        AdvanceEmpty(koGame,
+                     arena::GetMoveDefinition(arena::MoveId::ThunderStrikeLevel3)
+                         .startupFrames);
+    }
+    const int koHealth = Ember(koGame).health;
+    BeginCharge(koGame, 1);
+    bool passed = Expect(koHealth == 0 &&
+                             Ember(koGame).combatState == arena::CombatState::KnockedOut &&
+                             Ember(koGame).currentMove == arena::MoveId::None,
+                         "KO rejects new charge activation");
+
+    arena::Game first;
+    arena::Game second;
+    first.initialize();
+    AdvanceToFighting(first);
+    second.initialize();
+    AdvanceToFighting(second);
+    for (int tick = 0; tick < 150; ++tick) {
+        arena::FrameCommands commands;
+        commands.fighters[0].chargedAttackPressed = tick == 0;
+        commands.fighters[0].chargedAttackHeld = tick < 60;
+        commands.fighters[0].chargedAttackReleased = tick == 60;
+        commands.fighters[1].chargedAttackPressed = tick == 10;
+        commands.fighters[1].chargedAttackHeld = tick >= 10 && tick < 46;
+        commands.fighters[1].chargedAttackReleased = tick == 46;
+        first.advanceSimulation(commands);
+        second.advanceSimulation(commands);
+        passed &= Expect(CompleteStatesEqual(first, second),
+                         "charged command replay reproduces complete state each tick");
+        if (!passed) {
+            return false;
+        }
+    }
+    return passed;
+}
+
 bool TestChargeInterruptionAndCombatLockouts() {
     arena::Game lockoutGame;
     lockoutGame.initialize();
+    AdvanceToFighting(lockoutGame);
     arena::FrameCommands competingCommands;
     competingCommands.fighters[0].lightAttackPressed = true;
     competingCommands.fighters[0].chargedAttackPressed = true;
@@ -727,6 +1153,7 @@ bool TestChargeInterruptionAndCombatLockouts() {
 
     arena::Game chargingGame;
     chargingGame.initialize();
+    AdvanceToFighting(chargingGame);
     BeginCharge(chargingGame, 0);
     const float initialX = Volt(chargingGame).position.x;
     arena::FrameCommands rejectedActions;
@@ -743,6 +1170,7 @@ bool TestChargeInterruptionAndCombatLockouts() {
 
     arena::Game interruptedGame;
     interruptedGame.initialize();
+    AdvanceToFighting(interruptedGame);
     ApproachToBodyContact(interruptedGame);
     arena::FrameCommands start;
     start.fighters[0].lightAttackPressed = true;
@@ -765,6 +1193,7 @@ bool TestChargeInterruptionAndCombatLockouts() {
 bool TestSpecialActivationEnergyAndLifecycle() {
     arena::Game insufficient;
     insufficient.initialize();
+    AdvanceToFighting(insufficient);
     PressSpecial(insufficient, 0);
 
     bool passed = true;
@@ -774,6 +1203,7 @@ bool TestSpecialActivationEnergyAndLifecycle() {
 
     arena::Game thunderGame;
     thunderGame.initialize();
+    AdvanceToFighting(thunderGame);
     EarnEnergy(thunderGame, 0, 25);
     const int thunderEnergyBefore = Volt(thunderGame).energy;
     const arena::MoveDefinition& thunder =
@@ -809,6 +1239,7 @@ bool TestSpecialActivationEnergyAndLifecycle() {
 
     arena::Game infernoGame;
     infernoGame.initialize();
+    AdvanceToFighting(infernoGame);
     EarnEnergy(infernoGame, 1, 25);
     const int infernoEnergyBefore = Ember(infernoGame).energy;
     const arena::MoveDefinition& inferno =
@@ -842,6 +1273,7 @@ bool TestSpecialSpendingLockoutsAndInterruption() {
 
     arena::Game recoveryGame;
     recoveryGame.initialize();
+    AdvanceToFighting(recoveryGame);
     EarnEnergy(recoveryGame, 0, 50);
     PressSpecial(recoveryGame, 0);
     const arena::MoveDefinition& thunder =
@@ -855,6 +1287,7 @@ bool TestSpecialSpendingLockoutsAndInterruption() {
 
     arena::Game stunGame;
     stunGame.initialize();
+    AdvanceToFighting(stunGame);
     EarnEnergy(stunGame, 0, 25);
     ApproachToBodyContact(stunGame);
     AdvanceToFirstActiveFrame(stunGame, 1, arena::MoveId::Light);
@@ -866,6 +1299,7 @@ bool TestSpecialSpendingLockoutsAndInterruption() {
 
     arena::Game chargingGame;
     chargingGame.initialize();
+    AdvanceToFighting(chargingGame);
     EarnEnergy(chargingGame, 0, 25);
     BeginCharge(chargingGame, 0);
     const int chargingEnergy = Volt(chargingGame).energy;
@@ -879,6 +1313,7 @@ bool TestSpecialSpendingLockoutsAndInterruption() {
 
     arena::Game interruptedGame;
     interruptedGame.initialize();
+    AdvanceToFighting(interruptedGame);
     EarnEnergy(interruptedGame, 0, 25);
     ApproachToBodyContact(interruptedGame);
     const int activationEnergy = Volt(interruptedGame).energy;
@@ -896,6 +1331,7 @@ bool TestSpecialSpendingLockoutsAndInterruption() {
 
     arena::Game koGame;
     koGame.initialize();
+    AdvanceToFighting(koGame);
     EarnEnergy(koGame, 0, 25);
     for (int attack = 0; attack < 8 &&
                          Volt(koGame).combatState != arena::CombatState::KnockedOut;
@@ -915,6 +1351,7 @@ bool TestSpecialSpendingLockoutsAndInterruption() {
 bool TestThunderBoltProjectileStateAndDamage() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
     EarnEnergy(game, 0, 25);
 
     arena::FrameCommands separate;
@@ -980,6 +1417,7 @@ bool TestThunderBoltProjectileStateAndDamage() {
 bool TestThunderBoltBlockingAndLifetime() {
     arena::Game blockGame;
     blockGame.initialize();
+    AdvanceToFighting(blockGame);
     EarnEnergy(blockGame, 0, 25);
     arena::FrameCommands separate;
     separate.fighters[0].moveLeftHeld = true;
@@ -1011,6 +1449,7 @@ bool TestThunderBoltBlockingAndLifetime() {
 
     arena::Game lifetimeGame;
     lifetimeGame.initialize();
+    AdvanceToFighting(lifetimeGame);
     EarnEnergy(lifetimeGame, 0, 25);
     arena::FrameCommands moveLeft;
     moveLeft.fighters[0].moveLeftHeld = true;
@@ -1048,6 +1487,7 @@ bool TestThunderBoltBlockingAndLifetime() {
 bool TestProjectilePersistsAfterOwnerHit() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
     EarnEnergy(game, 0, 25);
     ApproachToBodyContact(game);
     arena::FrameCommands createGap;
@@ -1081,6 +1521,7 @@ bool TestInfernoBurstHitMissAndFacing() {
         arena::GetMoveDefinition(arena::MoveId::InfernoBurst);
     arena::Game hitGame;
     hitGame.initialize();
+    AdvanceToFighting(hitGame);
     EarnEnergy(hitGame, 1, 25);
     ApproachToBodyContact(hitGame);
     const int voltHealthBefore = Volt(hitGame).health;
@@ -1108,6 +1549,7 @@ bool TestInfernoBurstHitMissAndFacing() {
 
     arena::Game missGame;
     missGame.initialize();
+    AdvanceToFighting(missGame);
     EarnEnergy(missGame, 1, 25);
     arena::FrameCommands separate;
     separate.fighters[0].moveLeftHeld = true;
@@ -1124,6 +1566,7 @@ bool TestInfernoBurstHitMissAndFacing() {
 
     arena::Game blockGame;
     blockGame.initialize();
+    AdvanceToFighting(blockGame);
     EarnEnergy(blockGame, 1, 25);
     ApproachToBodyContact(blockGame);
     const int healthBeforeBlock = Volt(blockGame).health;
@@ -1145,6 +1588,7 @@ bool TestInfernoBurstHitMissAndFacing() {
 bool TestSpecialTradeAndKo() {
     arena::Game tradeGame;
     tradeGame.initialize();
+    AdvanceToFighting(tradeGame);
     EarnEnergy(tradeGame, 1, 25);
     ApproachToBodyContact(tradeGame);
     const int voltHealthBeforeTrade = Volt(tradeGame).health;
@@ -1166,6 +1610,7 @@ bool TestSpecialTradeAndKo() {
 
     arena::Game koGame;
     koGame.initialize();
+    AdvanceToFighting(koGame);
     EarnEnergy(koGame, 1, 72);
     ApproachToBodyContact(koGame);
     const int healthBeforeSpecial = Volt(koGame).health;
@@ -1181,6 +1626,7 @@ bool TestSpecialTradeAndKo() {
 bool TestHealthClampKoAndKoLockout() {
     arena::Game game;
     game.initialize();
+    AdvanceToFighting(game);
     for (int attack = 0; attack < 8; ++attack) {
         int safetyTicks = 0;
         while ((Volt(game).combatState != arena::CombatState::Available ||
@@ -1204,6 +1650,237 @@ bool TestHealthClampKoAndKoLockout() {
                          Ember(game).currentMove == arena::MoveId::None,
                      "KO fighter cannot attack");
     return passed;
+}
+
+bool TestMatchTimerAndTimeoutRules() {
+    arena::Game game({5, 2, 3});
+    game.initialize();
+
+    bool passed = true;
+    passed &= Expect(game.state().matchPhase == arena::MatchPhase::RoundIntro &&
+                         game.state().roundTimerTicksRemaining == 5 &&
+                         game.state().phaseTicksRemaining == 2,
+                     "a new match begins in a fixed-tick round intro");
+
+    arena::FrameCommands staleAttack;
+    staleAttack.fighters[0].lightAttackPressed = true;
+    staleAttack.fighters[0].lightAttackHeld = true;
+    game.advanceSimulation(staleAttack);
+    passed &= Expect(game.state().matchPhase == arena::MatchPhase::RoundIntro &&
+                         game.state().roundTimerTicksRemaining == 5,
+                     "the round timer does not decrement during intro");
+    staleAttack.fighters[0].lightAttackPressed = false;
+    game.advanceSimulation(staleAttack);
+    passed &= Expect(game.state().matchPhase == arena::MatchPhase::Fighting &&
+                         game.state().roundTimerTicksRemaining == 5,
+                     "fighting begins only after the exact intro duration");
+    game.advanceSimulation(staleAttack);
+    passed &= Expect(Volt(game).combatState == arena::CombatState::Available &&
+                         game.state().roundTimerTicksRemaining == 4,
+                     "an intro attack edge cannot leak into fighting");
+
+    AdvanceEmpty(game, 4);
+    passed &= Expect(game.state().matchPhase == arena::MatchPhase::RoundOver &&
+                         game.state().roundTimerTicksRemaining == 0 &&
+                         game.state().roundEndReason == arena::RoundEndReason::TimeOver &&
+                         game.state().roundResult == arena::RoundResult::Draw &&
+                         game.state().roundWins == std::array<int, 2>{0, 0},
+                     "equal health at the exact timer boundary produces an unscored draw");
+    game.advanceSimulation({});
+    passed &= Expect(game.state().roundTimerTicksRemaining == 0 &&
+                         game.state().roundWins == std::array<int, 2>{0, 0},
+                     "the timer cannot become negative and a result is not scored twice");
+    AdvanceEmpty(game, 2);
+    passed &= Expect(game.state().matchPhase == arena::MatchPhase::RoundIntro &&
+                         game.state().roundNumber == 2 &&
+                         game.state().roundTimerTicksRemaining == 5,
+                     "a drawn round advances to a fresh replay round without awarding a win");
+
+    arena::Game healthLead({200, 0, 2});
+    healthLead.initialize();
+    AdvanceToFighting(healthLead);
+    ApproachToBodyContact(healthLead);
+    AdvanceToFirstActiveFrame(healthLead, 0, arena::MoveId::Light);
+    const int remainingTicks = healthLead.state().roundTimerTicksRemaining;
+    AdvanceEmpty(healthLead, remainingTicks);
+    passed &= Expect(healthLead.state().matchPhase == arena::MatchPhase::RoundOver &&
+                         healthLead.state().roundResult == arena::RoundResult::VoltWins &&
+                         healthLead.state().roundWins == std::array<int, 2>{1, 0},
+                     "higher remaining health wins on timeout exactly once");
+    return passed;
+}
+
+bool TestKoDoubleKoAndTimerBoundary() {
+    arena::Game singleKo({2000, 0, 4});
+    singleKo.initialize();
+    AdvanceToFighting(singleKo);
+    KnockOutWithChargedAttacks(singleKo, 0);
+
+    bool passed = true;
+    passed &= Expect(singleKo.state().matchPhase == arena::MatchPhase::RoundOver &&
+                         Ember(singleKo).health == 0 &&
+                         singleKo.state().roundResult == arena::RoundResult::VoltWins &&
+                         singleKo.state().roundEndReason == arena::RoundEndReason::Knockout &&
+                         singleKo.state().roundWins == std::array<int, 2>{1, 0},
+                     "a single KO freezes combat and awards its opponent one round");
+    const int voltHealthAfterKo = Volt(singleKo).health;
+    arena::FrameCommands attackAfterKo;
+    attackAfterKo.fighters[0].lightAttackPressed = true;
+    singleKo.advanceSimulation(attackAfterKo);
+    passed &= Expect(Volt(singleKo).health == voltHealthAfterKo &&
+                         singleKo.state().roundWins == std::array<int, 2>{1, 0},
+                     "combat is frozen and scoring is stable after round completion");
+
+    arena::Game doubleKo({3000, 0, 4});
+    doubleKo.initialize();
+    AdvanceToFighting(doubleKo);
+    for (int trade = 0; trade < 4; ++trade) {
+        TradeLevelThreeChargedAttacks(doubleKo);
+    }
+    passed &= Expect(doubleKo.state().matchPhase == arena::MatchPhase::RoundOver &&
+                         Volt(doubleKo).health == 0 && Ember(doubleKo).health == 0 &&
+                         doubleKo.state().roundResult == arena::RoundResult::Draw &&
+                         doubleKo.state().roundEndReason ==
+                             arena::RoundEndReason::DoubleKnockout &&
+                         doubleKo.state().roundWins == std::array<int, 2>{0, 0},
+                     "simultaneous final contacts produce an unscored double KO");
+
+    arena::Game boundaryKo({2000, 0, 4});
+    boundaryKo.initialize();
+    AdvanceToFighting(boundaryKo);
+    for (int attack = 0; attack < 3; ++attack) {
+        AdvanceUntilBothAvailable(boundaryKo);
+        ApproachToBodyContact(boundaryKo);
+        ChargeAndRelease(boundaryKo, 0, 60);
+        AdvanceEmpty(boundaryKo,
+                     arena::GetMoveDefinition(arena::MoveId::ThunderStrikeLevel3)
+                         .startupFrames);
+    }
+    AdvanceUntilBothAvailable(boundaryKo);
+    ApproachToBodyContact(boundaryKo);
+    constexpr int kFinalAttackTicks = 69;
+    AdvanceEmpty(boundaryKo,
+                 boundaryKo.state().roundTimerTicksRemaining - kFinalAttackTicks);
+    ChargeAndRelease(boundaryKo, 0, 60);
+    AdvanceEmpty(boundaryKo,
+                 arena::GetMoveDefinition(arena::MoveId::ThunderStrikeLevel3)
+                     .startupFrames);
+    passed &= Expect(boundaryKo.state().roundTimerTicksRemaining == 0 &&
+                         Ember(boundaryKo).health == 0 &&
+                         boundaryKo.state().roundEndReason ==
+                             arena::RoundEndReason::Knockout &&
+                         boundaryKo.state().roundResult == arena::RoundResult::VoltWins,
+                     "KO resolution takes precedence on the timer-expiration tick");
+    return passed;
+}
+
+bool TestRoundResetScoringMatchOverAndRestart() {
+    arena::Game game({4000, 1, 3});
+    game.initialize();
+    AdvanceToFighting(game);
+    KnockOutWithChargedAttacks(game, 0);
+
+    bool passed = true;
+    passed &= Expect(game.state().roundWins == std::array<int, 2>{1, 0} &&
+                         game.state().roundNumber == 1,
+                     "VOLT receives the first round win");
+    game.advanceSimulation({});
+    game.advanceSimulation({});
+    passed &= Expect(game.state().roundWins == std::array<int, 2>{1, 0},
+                     "round-over ticks do not repeat the score award");
+
+    arena::FrameCommands staleEdge;
+    staleEdge.fighters[1].lightAttackPressed = true;
+    staleEdge.fighters[1].lightAttackHeld = true;
+    game.advanceSimulation(staleEdge);
+    passed &= Expect(game.state().matchPhase == arena::MatchPhase::RoundIntro &&
+                         game.state().roundNumber == 2 && Volt(game).health == 100 &&
+                         Ember(game).health == 100 && Volt(game).energy == 0 &&
+                         Ember(game).energy == 0 && NearlyEqual(Volt(game).position.x, 360.0F) &&
+                         NearlyEqual(Ember(game).position.x, 920.0F) &&
+                         NearlyEqual(Volt(game).velocity.x, 0.0F) &&
+                         NearlyEqual(Ember(game).velocity.x, 0.0F) &&
+                         Volt(game).facing == arena::FacingDirection::Right &&
+                         Ember(game).facing == arena::FacingDirection::Left &&
+                         Volt(game).combatState == arena::CombatState::Available &&
+                         Ember(game).combatState == arena::CombatState::Available &&
+                         Volt(game).currentMove == arena::MoveId::None &&
+                         Ember(game).currentMove == arena::MoveId::None &&
+                         Volt(game).attackPhase == arena::AttackPhase::None &&
+                         Ember(game).attackPhase == arena::AttackPhase::None &&
+                         Volt(game).hitStunFrames == 0 && Ember(game).hitStunFrames == 0 &&
+                         Volt(game).chargeFrames == 0 && Ember(game).chargeFrames == 0 &&
+                         Volt(game).hitFlashFrames == 0 && Ember(game).hitFlashFrames == 0 &&
+                         ActiveProjectileCount(game) == 0,
+                     "round reset restores fighters, transients, positions, facing, and projectiles");
+    staleEdge.fighters[1].lightAttackPressed = false;
+    game.advanceSimulation(staleEdge);
+    game.advanceSimulation(staleEdge);
+    passed &= Expect(game.state().matchPhase == arena::MatchPhase::Fighting &&
+                         Ember(game).combatState == arena::CombatState::Available,
+                     "a held attack from round-over cannot become a new-round press");
+
+    KnockOutWithChargedAttacks(game, 1);
+    passed &= Expect(game.state().roundWins == std::array<int, 2>{1, 1},
+                     "EMBER can equalize the round score");
+    AdvanceEmpty(game, 3);
+    AdvanceToFighting(game);
+    passed &= Expect(game.state().roundNumber == 3,
+                     "one win each advances to a deciding round");
+
+    KnockOutWithChargedAttacks(game, 0);
+    const int timerAtMatchPoint = game.state().roundTimerTicksRemaining;
+    AdvanceEmpty(game, 3);
+    passed &= Expect(game.state().matchPhase == arena::MatchPhase::MatchOver &&
+                         game.state().matchWinner == arena::RoundResult::VoltWins &&
+                         game.state().roundWins == std::array<int, 2>{2, 1},
+                     "the first fighter to two wins enters match over with a winner");
+    arena::FrameCommands rejectedAttack;
+    rejectedAttack.fighters[1].heavyAttackPressed = true;
+    game.advanceSimulation(rejectedAttack);
+    passed &= Expect(game.state().matchPhase == arena::MatchPhase::MatchOver &&
+                         game.state().roundTimerTicksRemaining == timerAtMatchPoint &&
+                         Ember(game).combatState == arena::CombatState::KnockedOut,
+                     "match over freezes attacks and the round timer");
+
+    arena::FrameCommands restart;
+    restart.restartPressed = true;
+    game.advanceSimulation(restart);
+    passed &= Expect(game.state().matchPhase == arena::MatchPhase::RoundIntro &&
+                         game.state().matchWinner == arena::RoundResult::None &&
+                         game.state().roundWins == std::array<int, 2>{0, 0} &&
+                         game.state().roundNumber == 1 && Volt(game).health == 100 &&
+                         Ember(game).health == 100 && Volt(game).energy == 0 &&
+                         Ember(game).energy == 0 &&
+                         game.state().roundTimerTicksRemaining == 4000,
+                     "R or Enter command starts one fully reset new match");
+    game.advanceSimulation({});
+    passed &= Expect(game.state().matchPhase == arena::MatchPhase::Fighting &&
+                         game.state().roundWins == std::array<int, 2>{0, 0},
+                     "the consumed restart command does not trigger again");
+    return passed;
+}
+
+bool TestProjectileClearedAtRoundBoundary() {
+    arena::Game game({1200, 0, 2});
+    game.initialize();
+    AdvanceToFighting(game);
+    EarnEnergy(game, 0, 25);
+
+    arena::FrameCommands separate;
+    separate.fighters[0].moveLeftHeld = true;
+    separate.fighters[1].moveRightHeld = true;
+    for (int tick = 0; tick < 30; ++tick) {
+        game.advanceSimulation(separate);
+    }
+    AdvanceEmpty(game, game.state().roundTimerTicksRemaining - 13);
+    PressSpecial(game, 0);
+    AdvanceEmpty(game, arena::GetMoveDefinition(arena::MoveId::ThunderBolt).startupFrames);
+
+    return Expect(game.state().matchPhase == arena::MatchPhase::RoundOver &&
+                      game.state().roundEndReason == arena::RoundEndReason::TimeOver &&
+                      ActiveProjectileCount(game) == 0,
+                  "timeout clears a projectile created on the final fighting tick");
 }
 
 bool FightersEqual(const arena::Fighter& first, const arena::Fighter& second) {
@@ -1243,6 +1920,15 @@ bool ProjectilesEqual(const arena::Projectile& first, const arena::Projectile& s
 bool CompleteStatesEqual(const arena::Game& first, const arena::Game& second) {
     if (!FightersEqual(Volt(first), Volt(second)) ||
         !FightersEqual(Ember(first), Ember(second)) ||
+        first.state().roundWins != second.state().roundWins ||
+        first.state().matchPhase != second.state().matchPhase ||
+        first.state().roundResult != second.state().roundResult ||
+        first.state().matchWinner != second.state().matchWinner ||
+        first.state().roundEndReason != second.state().roundEndReason ||
+        first.state().roundNumber != second.state().roundNumber ||
+        first.state().roundTimerTicksRemaining !=
+            second.state().roundTimerTicksRemaining ||
+        first.state().phaseTicksRemaining != second.state().phaseTicksRemaining ||
         first.state().simulationFrame != second.state().simulationFrame) {
         return false;
     }
@@ -1255,11 +1941,61 @@ bool CompleteStatesEqual(const arena::Game& first, const arena::Game& second) {
     return true;
 }
 
+bool TestMatchTransitionReplayConsistency() {
+    arena::Game first({80, 1, 1});
+    arena::Game second({80, 1, 1});
+    first.initialize();
+    second.initialize();
+
+    bool passed = true;
+    bool restartSent = false;
+    bool sawMatchOver = false;
+    int fightingTick = 0;
+    arena::MatchPhase previousPhase = first.state().matchPhase;
+    for (int tick = 0; tick < 260; ++tick) {
+        if (first.state().matchPhase != previousPhase) {
+            if (first.state().matchPhase == arena::MatchPhase::Fighting) {
+                fightingTick = 0;
+            }
+            previousPhase = first.state().matchPhase;
+        }
+
+        arena::FrameCommands commands;
+        if (first.state().matchPhase == arena::MatchPhase::Fighting) {
+            commands.fighters[0].moveRightHeld = fightingTick < 60;
+            commands.fighters[1].moveLeftHeld = fightingTick < 60;
+            commands.fighters[0].lightAttackPressed = fightingTick == 60;
+            commands.fighters[0].lightAttackHeld =
+                fightingTick >= 60 && fightingTick < 66;
+            ++fightingTick;
+        } else if (first.state().matchPhase == arena::MatchPhase::MatchOver &&
+                   !restartSent) {
+            commands.restartPressed = true;
+            restartSent = true;
+            sawMatchOver = true;
+        }
+
+        first.advanceSimulation(commands);
+        second.advanceSimulation(commands);
+        passed &= Expect(CompleteStatesEqual(first, second),
+                         "match command replay reproduces every transition state");
+        if (!passed) {
+            return false;
+        }
+    }
+
+    passed &= Expect(sawMatchOver && restartSent,
+                     "match replay fixture includes match over and rematch transitions");
+    return passed;
+}
+
 bool TestFixedTickReplayConsistency() {
     arena::Game first;
     arena::Game second;
     first.initialize();
+    AdvanceToFighting(first);
     second.initialize();
+    AdvanceToFighting(second);
 
     bool passed = true;
     for (int tick = 0; tick < arena::kSimulationRate * 5; ++tick) {
@@ -1293,8 +2029,10 @@ bool TestFixedTickReplayConsistency() {
         }
     }
 
-    passed &= Expect(first.state().simulationFrame == arena::kSimulationRate * 5,
-                     "five seconds advance exactly 300 fixed ticks");
+    passed &= Expect(first.state().simulationFrame ==
+                         arena::kDefaultRoundIntroDurationTicks +
+                             arena::kSimulationRate * 5,
+                     "five fighting seconds follow the fixed-tick round intro");
     passed &= Expect(first.state().simulationFrame == second.state().simulationFrame,
                      "matching replays retain the same frame number");
     return passed;
@@ -1304,7 +2042,9 @@ bool TestSpecialReplayConsistency() {
     arena::Game first;
     arena::Game second;
     first.initialize();
+    AdvanceToFighting(first);
     second.initialize();
+    AdvanceToFighting(second);
     EarnEnergy(first, 0, 25);
     EarnEnergy(first, 1, 25);
     EarnEnergy(second, 0, 25);
@@ -1371,6 +2111,11 @@ int main() {
     passed &= TestEnergyRulesAndSpecialFoundation();
     passed &= TestFrameCommandEdgeBuffer();
     passed &= TestChargeThresholdsAndMaximum();
+    passed &= TestChargedMoveDataAndLevelBoundaries();
+    passed &= TestChargedDamageTimingAndEconomy();
+    passed &= TestChargedBlockMissFacingAndLockouts();
+    passed &= TestChargedTradesAndOtherMoveInteractions();
+    passed &= TestChargedKoLockoutAndReplayConsistency();
     passed &= TestChargeInterruptionAndCombatLockouts();
     passed &= TestSpecialActivationEnergyAndLifecycle();
     passed &= TestSpecialSpendingLockoutsAndInterruption();
@@ -1380,6 +2125,11 @@ int main() {
     passed &= TestInfernoBurstHitMissAndFacing();
     passed &= TestSpecialTradeAndKo();
     passed &= TestHealthClampKoAndKoLockout();
+    passed &= TestMatchTimerAndTimeoutRules();
+    passed &= TestKoDoubleKoAndTimerBoundary();
+    passed &= TestRoundResetScoringMatchOverAndRestart();
+    passed &= TestProjectileClearedAtRoundBoundary();
+    passed &= TestMatchTransitionReplayConsistency();
     passed &= TestFixedTickReplayConsistency();
     passed &= TestSpecialReplayConsistency();
     return passed ? 0 : 1;

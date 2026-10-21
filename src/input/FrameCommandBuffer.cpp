@@ -44,6 +44,8 @@ void FrameCommandBuffer::sample(const FrameCommands& sampledCommands) {
         AccumulateCommand(pendingCommands_.fighters[fighterIndex],
                           sampledCommands.fighters[fighterIndex]);
     }
+    pendingCommands_.restartPressed =
+        pendingCommands_.restartPressed || sampledCommands.restartPressed;
 }
 
 FrameCommands FrameCommandBuffer::consumeForSimulationTick() {
@@ -51,6 +53,7 @@ FrameCommands FrameCommandBuffer::consumeForSimulationTick() {
     for (FighterCommand& command : pendingCommands_.fighters) {
         ClearEdges(command);
     }
+    pendingCommands_.restartPressed = false;
     return commands;
 }
 

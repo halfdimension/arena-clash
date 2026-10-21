@@ -99,7 +99,7 @@ Phase 1C deliberately uses no chip damage, block-stun, or combo tracking. Those 
 
 ## Phase 1D — Special and charged attacks
 
-**Status:** In progress. Phase 1D-A energy/input/charge foundations and Phase 1D-B character-specific specials are complete and verified on 2026-10-21. Charged attack resolution and ultimate work remain planned.
+**Status:** In progress. Phase 1D-A energy/input foundations, Phase 1D-B character-specific specials, and Phase 1D-C charged attacks are complete and verified in automated Linux builds/tests on 2026-10-21. Ultimate work remains planned.
 
 **Objectives**
 
@@ -133,13 +133,19 @@ Phase 1D-A deliberately does not include character-specific attacks, projectiles
 
 Native Linux and WebAssembly builds pass. Chrome runtime checks exercised `H` and semicolon activation, visible meter spending, Thunder Bolt flight, Inferno Burst presentation, damage, and KO. Phase 1D-B deliberately excludes charged-attack damage/hitboxes, ultimates, AI, networking, and round-flow changes.
 
-### Phase 1D-C — Charged attack resolution and remaining Phase 1D scope
+### Phase 1D-C — Charged attack resolution
+
+**Status:** Complete. VOLT's Thunder Strike and EMBER's Flame Smash select one of three fixed-tick levels on release, use character-specific data-backed startup/active/recovery, hitboxes, stun, and knockback, and reuse the normal simultaneous contact pipeline. Charged attacks block normally, connect once, cost/award no energy, clear interrupted/stale charge state, and have procedural level-aware presentation. Exact threshold, timing, collision, interaction, lockout, energy, and replay regressions pass in Linux test builds. Native and WebAssembly applications compile, and Chrome match runtime checks exercised Thunder Strike charge/release/impact presentation; the current native runtime remains unavailable because X11 display `:0` cannot be opened.
+
+### Phase 1D-D — Ultimate abilities
 
 **Status:** Planned.
 
-Specify and connect the existing ready charge outcome to documented charged attack levels, startup/active/recovery, damage, hitboxes, and interruption/cancel behavior. Decide whether ultimates remain in Phase 1D or move to a later milestone before implementation. Phase 1D is not complete until the remaining parent acceptance criteria are implemented and verified.
+Specify and implement one character-specific ultimate per fighter through the existing move/contact pipeline. Phase 1D is not complete until ultimate behavior and the remaining parent acceptance criteria are implemented and verified.
 
 ## Phase 1E — Complete local matches
+
+**Status:** Complete. The platform-neutral simulation owns four match phases, a 90-second fixed-tick timer, post-contact KO/double-KO/timeout adjudication, first-to-two scoring with unscored replayed draws, full round resets, match victory, and buffered `R`/Enter rematch. The HUD presents countdown, timer, rounds, score, result reasons, winner, and rematch instructions. Linux core/desktop tests and builds pass; WebAssembly builds and an automated Chrome two-round match/rematch playthrough passes. The current native runtime is unverified because X11 display `:0` is unavailable.
 
 **Objectives**
 
@@ -149,17 +155,19 @@ Specify and connect the existing ready charge outcome to documented charged atta
 **Deliverables**
 
 - Round intro, timer, knockout, timeout, draw, round reset, and match-over flow
-- Best-of-three scoring, rematch, pause, and exit behavior
-- One complete arena and readable placeholder UI/audio feedback
+- First-to-two scoring, drawn-round replay, and rematch behavior
+- Existing arena plus readable placeholder match UI
 - Resolved rules for repeated draws and deciding rounds
 - End-to-end local match checks
 
 **Acceptance criteria**
 
-- Two players can start, finish, and rematch a complete best-of-three match without restarting the application.
+- Two players can start, finish, and rematch a complete first-to-two match without restarting the application; unscored draws may extend it beyond three rounds.
 - KO, double KO, timeout, draw, and match victory outcomes follow documented rules.
 - State resets do not leak health, position, transient hit state, or unintended energy between rounds.
-- A documented manual test matrix passes on every platform claimed in the README.
+- A documented runtime test matrix passes on every platform claimed for this milestone in the README.
+
+Pause and audio were not part of the implemented Phase 1E assignment and remain future work. Linux desktop compilation/headless simulation and Chrome/WebAssembly runtime are the currently verified platforms; Windows and macOS remain unclaimed.
 
 ## Phase 2 — Animations and visual polish
 

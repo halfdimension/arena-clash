@@ -19,6 +19,8 @@ constexpr float kGroundKnockbackFriction = 0.82F;
 constexpr int kHitFlashDuration = 5;
 constexpr int kBlockFlashDuration = 4;
 constexpr int kSpecialImpactDuration = 8;
+constexpr float kVoltStartingPositionX = 360.0F;
+constexpr float kEmberStartingPositionX = 920.0F;
 
 struct PendingHit {
     bool valid = false;
@@ -63,6 +65,53 @@ Fighter MakeFighter(FighterId id, float positionX, float movementSpeed, float ju
     };
 }
 
+void ResetFightersAndProjectiles(GameState& state, const MatchRules& matchRules) {
+    state.fighters = {{MakeFighter(FighterId::Volt, kVoltStartingPositionX,
+                                   kVoltMovementSpeed, kVoltJumpVelocity,
+                                   FacingDirection::Right),
+                       MakeFighter(FighterId::Ember, kEmberStartingPositionX,
+                                   kEmberMovementSpeed, kEmberJumpVelocity,
+                                   FacingDirection::Left)}};
+    state.projectiles = {};
+    state.matchPhase = MatchPhase::RoundIntro;
+    state.roundResult = RoundResult::None;
+    state.roundEndReason = RoundEndReason::None;
+    state.roundTimerTicksRemaining = matchRules.roundDurationTicks;
+    state.phaseTicksRemaining = matchRules.roundIntroDurationTicks;
+}
+
+void StartNewMatch(GameState& state, const MatchRules& matchRules) {
+    state.roundWins = {};
+    state.matchWinner = RoundResult::None;
+    state.roundNumber = 1;
+    ResetFightersAndProjectiles(state, matchRules);
+}
+
+void FinishRound(GameState& state, const MatchRules& matchRules, RoundResult result,
+                 RoundEndReason reason) {
+    state.matchPhase = MatchPhase::RoundOver;
+    state.roundResult = result;
+    state.roundEndReason = reason;
+    state.phaseTicksRemaining = matchRules.roundOverDurationTicks;
+    state.projectiles = {};
+
+    if (result == RoundResult::VoltWins) {
+        ++state.roundWins[0];
+    } else if (result == RoundResult::EmberWins) {
+        ++state.roundWins[1];
+    }
+}
+
+RoundResult ResultFromRemainingHealth(const GameState& state) {
+    if (state.fighters[0].health > state.fighters[1].health) {
+        return RoundResult::VoltWins;
+    }
+    if (state.fighters[1].health > state.fighters[0].health) {
+        return RoundResult::EmberWins;
+    }
+    return RoundResult::Draw;
+}
+
 float MinimumPositionX(const Fighter& fighter) {
     return kArenaLeftBoundary + fighter.collisionWidth * 0.5F;
 }
@@ -81,6 +130,7 @@ void SetAvailable(Fighter& fighter) {
     fighter.attackPhase = AttackPhase::None;
     fighter.combatStateFrame = 0;
     fighter.hitStunFrames = 0;
+    fighter.chargeFrames = 0;
     fighter.attackHasConnected = false;
     fighter.moveEffectCreated = false;
 }
@@ -111,10 +161,16 @@ void StartCharging(Fighter& fighter) {
 
 void FinishCharging(Fighter& fighter) {
     const int minimumChargeFrames = GetCombatRules().minimumChargeFrames;
-    fighter.chargeReleaseOutcome = fighter.chargeFrames >= minimumChargeFrames
-                                       ? ChargeReleaseOutcome::Ready
-                                       : ChargeReleaseOutcome::Cancelled;
-    SetAvailable(fighter);
+    if (fighter.chargeFrames < minimumChargeFrames) {
+        fighter.chargeReleaseOutcome = ChargeReleaseOutcome::Cancelled;
+        SetAvailable(fighter);
+        return;
+    }
+
+    const MoveId chargedMove = GetChargedMoveId(fighter, fighter.chargeFrames);
+    fighter.chargeReleaseOutcome = ChargeReleaseOutcome::Ready;
+    fighter.chargeFrames = 0;
+    StartAttack(fighter, chargedMove);
 }
 
 void PrepareCombatState(Fighter& fighter, const FighterCommand& command) {
@@ -443,7 +499,7 @@ void ApplyPendingHit(GameState& state, const PendingHit& hit) {
     Fighter& attacker = state.fighters[hit.attackerIndex];
     Fighter& defender = state.fighters[hit.defenderIndex];
     const int hitEnergyGain = EnergyGainForHit(hit.move->id);
-    const bool isSpecial = hit.move->energyCost > 0;
+    const bool hasDistinctImpact = hit.move->energyCost > 0 || IsChargedMove(hit.move->id);
 
     if (hit.blocked) {
         if (hitEnergyGain > 0) {
@@ -452,7 +508,7 @@ void ApplyPendingHit(GameState& state, const PendingHit& hit) {
             GainEnergy(defender, combatRules.blockedDefenderEnergyGain);
         }
         defender.blockFlashFrames = kBlockFlashDuration;
-        if (isSpecial) {
+        if (hasDistinctImpact) {
             defender.specialImpactMove = hit.move->id;
             defender.specialImpactFrames = kSpecialImpactDuration;
         }
@@ -462,7 +518,7 @@ void ApplyPendingHit(GameState& state, const PendingHit& hit) {
     GainEnergy(attacker, hitEnergyGain);
     defender.health = std::max(0, defender.health - hit.move->damage);
     defender.hitFlashFrames = kHitFlashDuration;
-    if (isSpecial) {
+    if (hasDistinctImpact) {
         defender.specialImpactMove = hit.move->id;
         defender.specialImpactFrames = kSpecialImpactDuration;
     }
@@ -470,6 +526,7 @@ void ApplyPendingHit(GameState& state, const PendingHit& hit) {
     defender.velocity.x = hit.move->knockbackStrength * knockbackDirection;
     if (defender.combatState == CombatState::Charging) {
         defender.chargeReleaseOutcome = ChargeReleaseOutcome::Interrupted;
+        defender.chargeFrames = 0;
     }
     defender.currentMove = MoveId::None;
     defender.attackPhase = AttackPhase::None;
@@ -488,18 +545,56 @@ void ApplyPendingHit(GameState& state, const PendingHit& hit) {
 
 }  // namespace
 
+Game::Game(MatchRules matchRules)
+    : matchRules_{std::max(1, matchRules.roundDurationTicks),
+                  std::max(0, matchRules.roundIntroDurationTicks),
+                  std::max(0, matchRules.roundOverDurationTicks)} {
+}
+
 void Game::initialize() {
-    state_ = {
-        {{MakeFighter(FighterId::Volt, 360.0F, kVoltMovementSpeed, kVoltJumpVelocity,
-                      FacingDirection::Right),
-          MakeFighter(FighterId::Ember, 920.0F, kEmberMovementSpeed, kEmberJumpVelocity,
-                      FacingDirection::Left)}},
-        {},
-        0,
-    };
+    state_ = {};
+    StartNewMatch(state_, matchRules_);
 }
 
 void Game::advanceSimulation(const FrameCommands& commands) {
+    if (state_.matchPhase == MatchPhase::RoundIntro) {
+        state_.phaseTicksRemaining = std::max(0, state_.phaseTicksRemaining - 1);
+        if (state_.phaseTicksRemaining == 0) {
+            state_.matchPhase = MatchPhase::Fighting;
+        }
+        ++state_.simulationFrame;
+        return;
+    }
+
+    if (state_.matchPhase == MatchPhase::RoundOver) {
+        state_.phaseTicksRemaining = std::max(0, state_.phaseTicksRemaining - 1);
+        if (state_.phaseTicksRemaining == 0) {
+            if (state_.roundWins[0] >= kRoundWinsRequired) {
+                state_.matchPhase = MatchPhase::MatchOver;
+                state_.matchWinner = RoundResult::VoltWins;
+            } else if (state_.roundWins[1] >= kRoundWinsRequired) {
+                state_.matchPhase = MatchPhase::MatchOver;
+                state_.matchWinner = RoundResult::EmberWins;
+            } else {
+                ++state_.roundNumber;
+                ResetFightersAndProjectiles(state_, matchRules_);
+            }
+        }
+        ++state_.simulationFrame;
+        return;
+    }
+
+    if (state_.matchPhase == MatchPhase::MatchOver) {
+        if (commands.restartPressed) {
+            const std::uint64_t nextSimulationFrame = state_.simulationFrame + 1;
+            StartNewMatch(state_, matchRules_);
+            state_.simulationFrame = nextSimulationFrame;
+        } else {
+            ++state_.simulationFrame;
+        }
+        return;
+    }
+
     const std::array<float, 2> previousPositionsX = {
         state_.fighters[0].position.x,
         state_.fighters[1].position.x,
@@ -540,6 +635,25 @@ void Game::advanceSimulation(const FrameCommands& commands) {
         ApplyPendingHit(state_, hit);
     }
     AgeProjectiles(state_);
+
+    state_.roundTimerTicksRemaining =
+        std::max(0, state_.roundTimerTicksRemaining - 1);
+    const bool voltKnockedOut = state_.fighters[0].health == 0;
+    const bool emberKnockedOut = state_.fighters[1].health == 0;
+    if (voltKnockedOut || emberKnockedOut) {
+        if (voltKnockedOut && emberKnockedOut) {
+            FinishRound(state_, matchRules_, RoundResult::Draw,
+                        RoundEndReason::DoubleKnockout);
+        } else {
+            FinishRound(state_, matchRules_,
+                        voltKnockedOut ? RoundResult::EmberWins
+                                      : RoundResult::VoltWins,
+                        RoundEndReason::Knockout);
+        }
+    } else if (state_.roundTimerTicksRemaining == 0) {
+        FinishRound(state_, matchRules_, ResultFromRemainingHealth(state_),
+                    RoundEndReason::TimeOver);
+    }
     ++state_.simulationFrame;
 }
 

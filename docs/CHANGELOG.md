@@ -6,6 +6,36 @@ The format is inspired by Keep a Changelog. The project does not yet have a rele
 
 ## Unreleased
 
+### Added — 2026-10-21 (Phase 1E local match flow)
+
+- Added platform-neutral `RoundIntro`, `Fighting`, `RoundOver`, and `MatchOver` state with round result/reason, first-to-two scores, match winner, round number, and fixed-tick phase/timer counters.
+- Added a 90-second fighting timer, 3-second intro/result holds, post-contact KO/double-KO/timeout adjudication, KO precedence on the final timer tick, and unscored replayed draws.
+- Added centralized round/new-match reset paths for health, zero-start energy, positions, velocities, facing, attacks, stun, charge, feedback, projectiles, timer, scores, and winner state.
+- Added a buffered match-level restart command mapped to `R` and Enter; combat-phase gating consumes stale edges and prevents attacks during intro, round-over, and match-over phases.
+- Replaced placeholder round UI with authoritative timer/round text, score pips, countdown, KO/double-KO/time-over results, winner text, and a rematch panel.
+- Expanded headless coverage for exact timer behavior, every KO/timeout/draw outcome, score-once rules, both round winners, one-win-each progression, first-to-two, complete resets, projectile clearing, stale edges, frozen combat, rematch, and full match-transition replay consistency.
+
+### Verified — 2026-10-21 (Phase 1E completion)
+
+- Built the isolated and desktop Linux targets; both CTest runs passed 1 of 1 test executables with all Phase 1A–1E regressions.
+- Built the Emscripten 6.0.12/raylib 6.2 target after fixing a Clang-only aggregate-initialization incompatibility by separating `Game`'s default and explicit rules constructors.
+- Ran an automated Chrome 153/WebAssembly match: observed countdown and active timer, used Thunder Strike for a Round 1 KO, verified score/result hold and Round 2 reset, reached a 2–0 `VOLT WINS` match screen, then used `R` to return to a clean Round 1 intro.
+- Confirmed WebGL error state 0. HTML, JavaScript, and Wasm loaded successfully; only the known favicon 404 and headless software-rendering/readback diagnostics appeared.
+- Attempted the current native runtime, which could not open X11 display `:0`; native runtime presentation and controls therefore remain unverified for this revision.
+
+### Added — 2026-10-21 (Phase 1D-C charged attacks)
+
+- Added three data-backed Thunder Strike and Flame Smash levels selected at exact 18/36/60-tick thresholds with a 72-tick cap, early-release cancellation, and startup beginning on valid release.
+- Reused normal combat phases and simultaneous contact snapshotting for charged hit/block/miss/trade/KO behavior while keeping charged activation and contact energy-neutral.
+- Added fighter-specific charged poses, electric/fire charge feedback, displayed level/percentage, level-scaled attack streaks, names, and impact rings.
+- Added exact boundary, move-data, damage/timing, facing, one-hit, interruption, stale-release, recovery/KO, normal/special interaction, trade, energy, and replay tests.
+
+### Verified — 2026-10-21 (Phase 1D-C completion)
+
+- Built and passed the isolated and desktop Linux CTest suites, built the native application, and linked the Emscripten/WebAssembly application.
+- Exercised Thunder Strike charging, release, active effect, impacts, damage, and KO during the Phase 1E Chrome runtime playthrough, closing the prior charged-presentation verification gap.
+- Native charged presentation remains unverified in this revision because X11 display `:0` cannot be opened.
+
 ### Added — 2026-10-21 (Phase 1D-B character specials)
 
 - Extended move definitions with owner, behavior, energy cost, and projectile tuning while retaining the normal startup/active/recovery pipeline.

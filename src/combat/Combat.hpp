@@ -10,6 +10,12 @@ enum class MoveId {
     Heavy,
     ThunderBolt,
     InfernoBurst,
+    ThunderStrikeLevel1,
+    ThunderStrikeLevel2,
+    ThunderStrikeLevel3,
+    FlameSmashLevel1,
+    FlameSmashLevel2,
+    FlameSmashLevel3,
 };
 
 enum class MoveOwner {
@@ -85,11 +91,17 @@ struct CombatRules {
     int blockedDefenderEnergyGain;
     int specialEnergyCost;
     int minimumChargeFrames;
+    int chargeLevel2Frames;
+    int chargeLevel3Frames;
     int maximumChargeFrames;
 };
 
 const MoveDefinition& GetMoveDefinition(MoveId moveId);
 MoveId GetSpecialMoveId(const Fighter& fighter);
+MoveId GetChargedMoveId(const Fighter& fighter, int chargeFrames);
+int GetChargeLevel(int chargeFrames);
+int GetMoveChargeLevel(MoveId moveId);
+bool IsChargedMove(MoveId moveId);
 const CombatRules& GetCombatRules();
 void GainEnergy(Fighter& fighter, int amount);
 bool CanActivateSpecial(const Fighter& fighter);

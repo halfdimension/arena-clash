@@ -24,6 +24,7 @@ struct FighterCommand {
 
 struct FrameCommands {
     std::array<FighterCommand, 2> fighters{};
+    bool restartPressed = false;
 };
 
 }  // namespace arena
